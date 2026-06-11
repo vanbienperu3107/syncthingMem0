@@ -8,7 +8,9 @@ Repo đã có quy trình GitHub Actions để kiểm tra, build thử và phát 
 
 - CI: `.github/workflows/ci.yml`
 - Release: `.github/workflows/release.yml`
+- Optional server deploy: `.github/workflows/deploy-optional-servers.yml`
 - Tài liệu vận hành: `docs/ci-cd.md`
+- Tài liệu deploy server: `docs/deploy-servers.md`
 
 Tạo release bằng tag:
 

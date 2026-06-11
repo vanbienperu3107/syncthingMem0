@@ -1,0 +1,263 @@
+name: Deploy Optional Servers
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to deploy. Leave blank to use the current ref.
+        required: false
+        type: string
+      version:
+        description: Image tag/version override. Leave blank to use tag name or short SHA.
+        required: false
+        type: string
+      services:
+        description: Which optional services to deploy
+        required: true
+        default: auto
+        type: choice
+        options:
+          - auto
+          - all
+          - strelaysrv
+          - stdiscosrv
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  detect:
+    name: Detect deployable services
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.detect.outputs.services }}
+      should_deploy: ${{ steps.detect.outputs.should_deploy }}
+      version: ${{ steps.detect.outputs.version }}
+      namespace: ${{ steps.detect.outputs.namespace }}
+      relay_enabled: ${{ steps.detect.outputs.relay_enabled }}
+      discovery_enabled: ${{ steps.detect.outputs.discovery_enabled }}
+      profile_args: ${{ steps.detect.outputs.profile_args }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Detect services
+        id: detect
+        shell: bash
+        run: |
+          requested="${{ github.event.inputs.services || 'auto' }}"
+          version="${GITHUB_REF_NAME}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ -n "${{ github.event.inputs.version }}" ]; then
+              version="${{ github.event.inputs.version }}"
+            elif [ -n "${{ github.event.inputs.ref }}" ]; then
+              version="$(echo "${{ github.event.inputs.ref }}" | tr '/:@' '-')"
+            else
+              version="manual-${GITHUB_SHA::7}"
+            fi
+          fi
+
+          relay_enabled=false
+          discovery_enabled=false
+          profile_args=""
+          services='[]'
+
+          if [ -f go.mod ]; then
+            items=()
+
+            if [ -d cmd/strelaysrv ] && [[ "$requested" =~ ^(auto|all|strelaysrv)$ ]]; then
+              items+=('{"id":"strelaysrv","binary_name":"strelaysrv","image_name":"syncthingmem0-strelaysrv","main_package":"./cmd/strelaysrv"}')
+              relay_enabled=true
+              profile_args="$profile_args --profile relay"
+            fi
+
+            if [ -d cmd/stdiscosrv ] && [[ "$requested" =~ ^(auto|all|stdiscosrv)$ ]]; then
+              items+=('{"id":"stdiscosrv","binary_name":"stdiscosrv","image_name":"syncthingmem0-stdiscosrv","main_package":"./cmd/stdiscosrv"}')
+              discovery_enabled=true
+              profile_args="$profile_args --profile discovery"
+            fi
+
+            if [ "${#items[@]}" -gt 0 ]; then
+              services="$(printf '%s\n' "${items[@]}" | jq -s -c .)"
+            fi
+          fi
+
+          should_deploy=false
+          if [ "$services" != "[]" ]; then
+            should_deploy=true
+          fi
+
+          namespace="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+
+          echo "services=$services" >> "$GITHUB_OUTPUT"
+          echo "should_deploy=$should_deploy" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "namespace=$namespace" >> "$GITHUB_OUTPUT"
+          echo "relay_enabled=$relay_enabled" >> "$GITHUB_OUTPUT"
+          echo "discovery_enabled=$discovery_enabled" >> "$GITHUB_OUTPUT"
+          echo "profile_args=$profile_args" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build and publish images
+    needs: detect
+    if: needs.detect.outputs.should_deploy == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.detect.outputs.services) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.server
+          push: true
+          build-args: |
+            MAIN_PACKAGE=${{ matrix.service.main_package }}
+            BINARY_NAME=${{ matrix.service.binary_name }}
+          tags: |
+            ghcr.io/${{ needs.detect.outputs.namespace }}/${{ matrix.service.image_name }}:${{ needs.detect.outputs.version }}
+
+  deploy:
+    name: Deploy to VPS
+    needs:
+      - detect
+      - build
+    if: needs.detect.outputs.should_deploy == 'true'
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      HAS_DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY != '' }}
+      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      RELAY_EXT_ADDRESS: ${{ secrets.RELAY_EXT_ADDRESS }}
+      RELAY_POOLS: ${{ secrets.RELAY_POOLS }}
+      RELAY_TOKEN: ${{ secrets.RELAY_TOKEN }}
+      RELAY_PROVIDED_BY: ${{ secrets.RELAY_PROVIDED_BY }}
+      DISCOVERY_HTTP: ${{ secrets.DISCOVERY_HTTP }}
+      DISCOVERY_METRICS_LISTEN: ${{ secrets.DISCOVERY_METRICS_LISTEN }}
+    steps:
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          test -n "$DEPLOY_HOST" || { echo "Missing DEPLOY_HOST secret."; exit 1; }
+          test -n "$DEPLOY_USER" || { echo "Missing DEPLOY_USER secret."; exit 1; }
+          test "$HAS_DEPLOY_SSH_KEY" = "true" || { echo "Missing DEPLOY_SSH_KEY secret."; exit 1; }
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Copy compose file
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          source: deploy/docker-compose.optional-servers.yml
+          target: ${{ secrets.DEPLOY_PATH || '/opt/syncthingmem0' }}
+          strip_components: 1
+
+      - name: Run deployment
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          VERSION: ${{ needs.detect.outputs.version }}
+          NAMESPACE: ${{ needs.detect.outputs.namespace }}
+          PROFILE_ARGS: ${{ needs.detect.outputs.profile_args }}
+          RELAY_ENABLED: ${{ needs.detect.outputs.relay_enabled }}
+          DISCOVERY_ENABLED: ${{ needs.detect.outputs.discovery_enabled }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/opt/syncthingmem0' }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          RELAY_EXT_ADDRESS: ${{ secrets.RELAY_EXT_ADDRESS }}
+          RELAY_POOLS: ${{ secrets.RELAY_POOLS }}
+          RELAY_TOKEN: ${{ secrets.RELAY_TOKEN }}
+          RELAY_PROVIDED_BY: ${{ secrets.RELAY_PROVIDED_BY }}
+          DISCOVERY_HTTP: ${{ secrets.DISCOVERY_HTTP }}
+          DISCOVERY_METRICS_LISTEN: ${{ secrets.DISCOVERY_METRICS_LISTEN }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          envs: VERSION,NAMESPACE,PROFILE_ARGS,RELAY_ENABLED,DISCOVERY_ENABLED,DEPLOY_PATH,GHCR_USERNAME,GHCR_TOKEN,RELAY_EXT_ADDRESS,RELAY_POOLS,RELAY_TOKEN,RELAY_PROVIDED_BY,DISCOVERY_HTTP,DISCOVERY_METRICS_LISTEN
+          script: |
+            set -eu
+            mkdir -p "$DEPLOY_PATH"
+            cd "$DEPLOY_PATH"
+
+            cat > .env <<EOF
+            IMAGE_TAG=$VERSION
+            GHCR_NAMESPACE=$NAMESPACE
+            RELAY_ENABLED=$RELAY_ENABLED
+            DISCOVERY_ENABLED=$DISCOVERY_ENABLED
+            RELAY_EXT_ADDRESS=$RELAY_EXT_ADDRESS
+            RELAY_POOLS=$RELAY_POOLS
+            RELAY_TOKEN=$RELAY_TOKEN
+            RELAY_PROVIDED_BY=$RELAY_PROVIDED_BY
+            DISCOVERY_HTTP=$DISCOVERY_HTTP
+            DISCOVERY_METRICS_LISTEN=$DISCOVERY_METRICS_LISTEN
+            EOF
+
+            if [ -n "${GHCR_USERNAME:-}" ] && [ -n "${GHCR_TOKEN:-}" ]; then
+              echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+            fi
+
+            docker compose -f docker-compose.optional-servers.yml $PROFILE_ARGS pull
+            docker compose -f docker-compose.optional-servers.yml $PROFILE_ARGS up -d --remove-orphans
+
+  deploy-result:
+    name: Deploy result
+    needs:
+      - detect
+      - build
+      - deploy
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarize
+        shell: bash
+        run: |
+          if [ "${{ needs.detect.outputs.should_deploy }}" != "true" ]; then
+            echo "No optional server source detected; deployment skipped."
+            exit 0
+          fi
+
+          if [ "${{ needs.build.result }}" != "success" ]; then
+            echo "Image build or publish failed."
+            exit 1
+          fi
+
+          if [ "${{ needs.deploy.result }}" != "success" ]; then
+            echo "Deployment failed."
+            exit 1
+          fi
+
+          echo "Deployment completed."

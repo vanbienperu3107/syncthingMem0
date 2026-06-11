@@ -1,0 +1,42 @@
+services:
+  strelaysrv:
+    profiles:
+      - relay
+    image: ghcr.io/${GHCR_NAMESPACE}/syncthingmem0-strelaysrv:${IMAGE_TAG}
+    container_name: syncthingmem0-strelaysrv
+    restart: unless-stopped
+    command:
+      - "-listen=:22067"
+      - "-keys=/var/lib/strelaysrv"
+      - "-status-srv=:22070"
+      - "-ext-address=${RELAY_EXT_ADDRESS:-}"
+      - "-pools=${RELAY_POOLS:-}"
+      - "-token=${RELAY_TOKEN:-}"
+      - "-provided-by=${RELAY_PROVIDED_BY:-}"
+    ports:
+      - "22067:22067"
+      - "22070:22070"
+    volumes:
+      - relay-data:/var/lib/strelaysrv
+
+  stdiscosrv:
+    profiles:
+      - discovery
+    image: ghcr.io/${GHCR_NAMESPACE}/syncthingmem0-stdiscosrv:${IMAGE_TAG}
+    container_name: syncthingmem0-stdiscosrv
+    restart: unless-stopped
+    environment:
+      DISCOVERY_DB_DIR: /var/lib/stdiscosrv
+      DISCOVERY_CERT_FILE: /var/lib/stdiscosrv/cert.pem
+      DISCOVERY_KEY_FILE: /var/lib/stdiscosrv/key.pem
+      DISCOVERY_LISTEN: :8443
+      DISCOVERY_HTTP: ${DISCOVERY_HTTP:-}
+      DISCOVERY_METRICS_LISTEN: ${DISCOVERY_METRICS_LISTEN:-}
+    ports:
+      - "8443:8443"
+    volumes:
+      - discovery-data:/var/lib/stdiscosrv
+
+volumes:
+  relay-data:
+  discovery-data:
