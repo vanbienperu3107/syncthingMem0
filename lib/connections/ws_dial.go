@@ -106,5 +106,7 @@ func cloneTLSConfig(cfg *tls.Config) *tls.Config {
 	if cfg == nil {
 		return &tls.Config{}
 	}
-	return cfg.Clone()
+	clone := cfg.Clone()
+	clone.NextProtos = nil
+	return clone
 }
