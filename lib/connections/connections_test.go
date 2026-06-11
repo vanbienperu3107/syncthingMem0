@@ -156,6 +156,8 @@ func TestGetDialer(t *testing.T) {
 	}{
 		{mustParseURI("tcp://1.2.3.4:5678"), true, false, false},   // ok
 		{mustParseURI("tcp4://1.2.3.4:5678"), true, false, false},  // ok
+		{mustParseURI("wss://1.2.3.4:443/ws"), true, false, false}, // ok
+		{mustParseURI("ws://1.2.3.4:80/ws"), false, false, false},  // no TLS peer certificate
 		{mustParseURI("kcp://1.2.3.4:5678"), false, false, true},   // deprecated
 		{mustParseURI("relay://1.2.3.4:5678"), false, true, false}, // disabled
 		{mustParseURI("http://1.2.3.4:5678"), false, false, false}, // generally bad
@@ -371,6 +373,7 @@ func TestConnectionEstablishment(t *testing.T) {
 	addrs := []string{
 		"tcp://127.0.0.1:0",
 		"quic://127.0.0.1:0",
+		"wss://127.0.0.1:0",
 	}
 
 	send := make([]byte, 128<<10)

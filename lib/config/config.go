@@ -98,6 +98,7 @@ type Configuration struct {
 	GUI                      GUIConfiguration      `json:"gui" xml:"gui"`
 	LDAP                     LDAPConfiguration     `json:"ldap" xml:"ldap"`
 	Options                  OptionsConfiguration  `json:"options" xml:"options"`
+	HubURL                   string                `json:"hubURL" xml:"hubURL"`
 	IgnoredDevices           []ObservedDevice      `json:"remoteIgnoredDevices" xml:"remoteIgnoredDevice"`
 	DeprecatedPendingDevices []ObservedDevice      `json:"-" xml:"pendingDevice,omitempty"` // Deprecated: Do not use.
 	Defaults                 Defaults              `json:"defaults" xml:"defaults"`

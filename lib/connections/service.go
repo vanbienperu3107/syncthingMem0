@@ -710,6 +710,9 @@ func (s *service) resolveDialTargets(ctx context.Context, now time.Time, cfg con
 
 func (s *service) resolveDeviceAddrs(ctx context.Context, cfg config.DeviceConfiguration) []string {
 	var addrs []string
+	if hubURL := s.cfg.RawCopy().HubURL; hubURL != "" {
+		addrs = append(addrs, hubURL)
+	}
 	for _, addr := range cfg.Addresses {
 		if addr == "dynamic" {
 			if s.discoverer != nil {
@@ -904,7 +907,7 @@ func (s *service) CommitConfiguration(from, to config.Configuration) bool {
 
 func (s *service) checkAndSignalConnectLoopOnUpdatedDevices(from, to config.Configuration) {
 	oldDevices := from.DeviceMap()
-	dial := false
+	dial := from.HubURL != to.HubURL
 	s.dialNowDevicesMut.Lock()
 	for _, dev := range to.Devices {
 		if dev.Paused {
