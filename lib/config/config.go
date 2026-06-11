@@ -35,7 +35,7 @@ const (
 	OldestHandledVersion = 10
 	CurrentVersion       = 52
 	MaxRescanIntervalS   = 365 * 24 * 60 * 60
-	DefaultTokenTTLH      = 720
+	DefaultTokenTTLH     = 720
 )
 
 var (

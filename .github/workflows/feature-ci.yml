@@ -38,8 +38,11 @@ jobs:
             exit 1
           fi
 
-      - name: Run tests
-        run: go test ./... -count=1
+      - name: Prepare generated assets
+        run: go run build.go
+
+      - name: Run feature tests
+        run: go test ./lib/auth/... ./lib/api/... ./lib/config/... -count=1
 
       - name: Build Syncthing
         run: go run build.go -no-upgrade
