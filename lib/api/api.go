@@ -346,6 +346,8 @@ func (s *service) Serve(ctx context.Context) error {
 
 	// The main routing handler
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/register", s.handleRegister)
+	mux.Handle("/api/token/refresh", s.bearerAuthMiddleware(http.HandlerFunc(s.handleTokenRefresh)))
 	mux.Handle("/rest/", noCacheRestMux)
 	mux.HandleFunc("/qr/", s.getQR)
 

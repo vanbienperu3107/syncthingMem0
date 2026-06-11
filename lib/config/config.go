@@ -35,6 +35,7 @@ const (
 	OldestHandledVersion = 10
 	CurrentVersion       = 52
 	MaxRescanIntervalS   = 365 * 24 * 60 * 60
+	DefaultTokenTTLH      = 720
 )
 
 var (
@@ -98,6 +99,10 @@ type Configuration struct {
 	GUI                      GUIConfiguration      `json:"gui" xml:"gui"`
 	LDAP                     LDAPConfiguration     `json:"ldap" xml:"ldap"`
 	Options                  OptionsConfiguration  `json:"options" xml:"options"`
+	HubSecret                string                `json:"hubSecret" xml:"hubSecret"`
+	RegistrationSecret       string                `json:"registrationSecret" xml:"registrationSecret"`
+	DeviceToken              string                `json:"deviceToken" xml:"deviceToken"`
+	TokenTTL                 int                   `json:"tokenTTL" xml:"tokenTTL" default:"720"`
 	IgnoredDevices           []ObservedDevice      `json:"remoteIgnoredDevices" xml:"remoteIgnoredDevice"`
 	DeprecatedPendingDevices []ObservedDevice      `json:"-" xml:"pendingDevice,omitempty"` // Deprecated: Do not use.
 	Defaults                 Defaults              `json:"defaults" xml:"defaults"`

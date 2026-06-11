@@ -100,6 +100,7 @@ func TestDefaultValues(t *testing.T) {
 			ConnectionPriorityQUICWAN: 40,
 			ConnectionPriorityRelay:   50,
 		},
+		TokenTTL: DefaultTokenTTLH,
 		Defaults: Defaults{
 			Folder: FolderConfiguration{
 				FilesystemType:   FilesystemTypeBasic,
@@ -150,6 +151,51 @@ func TestDefaultValues(t *testing.T) {
 
 	if diff, equal := messagediff.PrettyDiff(expected, cfg); !equal {
 		t.Errorf("Default config differs. Diff:\n%s", diff)
+	}
+}
+
+func TestBearerAuthConfigFieldsRoundTrip(t *testing.T) {
+	cfg := New(device1)
+	cfg.HubSecret = "0123456789abcdef0123456789abcdef"
+	cfg.RegistrationSecret = "registration-secret"
+	cfg.DeviceToken = "device-token"
+	cfg.TokenTTL = 24
+
+	var jsonBuf bytes.Buffer
+	if err := json.NewEncoder(&jsonBuf).Encode(cfg); err != nil {
+		t.Fatal(err)
+	}
+	jsonCfg, err := ReadJSON(&jsonBuf, device1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBearerAuthConfigFields(t, jsonCfg)
+
+	var xmlBuf bytes.Buffer
+	if err := cfg.WriteXML(&xmlBuf); err != nil {
+		t.Fatal(err)
+	}
+	xmlCfg, _, err := ReadXML(&xmlBuf, device1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBearerAuthConfigFields(t, xmlCfg)
+}
+
+func assertBearerAuthConfigFields(t *testing.T, cfg Configuration) {
+	t.Helper()
+
+	if cfg.HubSecret != "0123456789abcdef0123456789abcdef" {
+		t.Errorf("got hubSecret=%q", cfg.HubSecret)
+	}
+	if cfg.RegistrationSecret != "registration-secret" {
+		t.Errorf("got registrationSecret=%q", cfg.RegistrationSecret)
+	}
+	if cfg.DeviceToken != "device-token" {
+		t.Errorf("got deviceToken=%q", cfg.DeviceToken)
+	}
+	if cfg.TokenTTL != 24 {
+		t.Errorf("got tokenTTL=%d", cfg.TokenTTL)
 	}
 }
 
