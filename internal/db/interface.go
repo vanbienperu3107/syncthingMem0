@@ -50,6 +50,7 @@ type DB interface {
 
 	// Basics
 	Update(folder string, device protocol.DeviceID, fs []protocol.FileInfo, opts ...UpdateOption) error
+	SetFolderLWWReconciler(folder string, enabled bool) error
 	Close() error
 
 	// Single files
@@ -107,6 +108,15 @@ type DB interface {
 	PutMtime(folder, name string, ondisk, virtual time.Time) error
 
 	KV
+}
+
+type AncestorEntry struct {
+	Name           string
+	ModifiedNanos int64
+	Size           int64
+	BlocklistHash  []byte
+	Deleted        bool
+	UpdatedNanos   int64
 }
 
 // Generic KV store

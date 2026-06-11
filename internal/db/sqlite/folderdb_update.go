@@ -452,10 +452,37 @@ func (s *folderDB) recalcGlobalForFolder(txp *txPreparedStmts) error {
 	return wrap(rows.Err())
 }
 
+func (s *folderDB) recalcAllGlobalsForFolder(txp *txPreparedStmts) error {
+	//nolint:sqlclosecheck
+	namesStmt, err := txp.Preparex(`
+		SELECT n.name FROM files f
+		INNER JOIN file_names n ON n.idx = f.name_idx
+		GROUP BY n.name
+	`)
+	if err != nil {
+		return wrap(err)
+	}
+	rows, err := namesStmt.Queryx()
+	if err != nil {
+		return wrap(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return wrap(err)
+		}
+		if err := s.recalcGlobalForFile(txp, name); err != nil {
+			return wrap(err)
+		}
+	}
+	return wrap(rows.Err())
+}
+
 func (s *folderDB) recalcGlobalForFile(txp *txPreparedStmts, file string) error {
 	//nolint:sqlclosecheck
 	selStmt, err := txp.Preparex(`
-		SELECT n.name, f.device_idx, f.sequence, f.modified, v.version, f.deleted, f.local_flags FROM files f
+		SELECT n.name, f.device_idx, f.sequence, f.modified, f.size, f.blocklist_hash, v.version, f.deleted, f.local_flags FROM files f
 		INNER JOIN file_versions v ON v.idx = f.version_idx
 		INNER JOIN file_names n ON n.idx = f.name_idx
 		WHERE n.name = ?
@@ -472,8 +499,18 @@ func (s *folderDB) recalcGlobalForFile(txp *txPreparedStmts, file string) error 
 		return nil
 	}
 
-	// Sort the entries; the global entry is at the head of the list
-	slices.SortFunc(es, fileRow.Compare)
+	var ancestor *db.AncestorEntry
+	if s.useLWWReconciler {
+		ancestor, err = s.getAncestorLocked(txp, file)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Sort the entries; the global entry is at the head of the list.
+	slices.SortFunc(es, func(a, b fileRow) int {
+		return a.CompareWithAncestor(b, ancestor, s.useLWWReconciler)
+	})
 
 	// The global version is the first one in the list that is not invalid,
 	// or just the first one in the list if all are invalid.
@@ -492,6 +529,10 @@ func (s *folderDB) recalcGlobalForFile(txp *txPreparedStmts, file string) error 
 	hasLocal := localIdx >= 0 && localIdx <= globIdx || // have a better or equal version
 		localIdx >= 0 && es[localIdx].Version.Equal(global.Version.Vector) || // have an equal version but invalid/ignored
 		localIdx < 0 && global.Deleted // missing it, but the global is also deleted
+	localHasGlobalVersion := localIdx >= 0 && es[localIdx].Version.Equal(global.Version.Vector)
+	remoteHasGlobalVersion := slices.ContainsFunc(es, func(e fileRow) bool {
+		return e.DeviceIdx != s.localDeviceIdx && e.Version.Equal(global.Version.Vector)
+	})
 
 	// Set the global flag on the global entry. Set the need flag if the
 	// local device needs this file, unless it's invalid.
@@ -526,6 +567,18 @@ func (s *folderDB) recalcGlobalForFile(txp *txPreparedStmts, file string) error 
 		return wrap(err)
 	}
 
+	if s.useLWWReconciler {
+		if localHasGlobalVersion && remoteHasGlobalVersion {
+			if err := s.putAncestorLocked(txp, global); err != nil {
+				return err
+			}
+		} else if global.Deleted && localIdx < 0 && remoteHasGlobalVersion {
+			if err := s.deleteAncestorLocked(txp, global.Name); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -548,17 +601,22 @@ func (s *DB) folderIdxLocked(folderID string) (int64, error) {
 }
 
 type fileRow struct {
-	Name       string
-	Version    dbVector
-	DeviceIdx  int64 `db:"device_idx"`
-	Sequence   int64
-	Modified   int64
-	Size       int64
-	LocalFlags protocol.FlagLocal `db:"local_flags"`
-	Deleted    bool
+	Name          string
+	Version       dbVector
+	DeviceIdx    int64 `db:"device_idx"`
+	Sequence     int64
+	Modified     int64
+	Size         int64
+	BlocklistHash []byte `db:"blocklist_hash"`
+	LocalFlags    protocol.FlagLocal `db:"local_flags"`
+	Deleted       bool
 }
 
 func (e fileRow) Compare(other fileRow) int {
+	return e.CompareWithAncestor(other, nil, false)
+}
+
+func (e fileRow) CompareWithAncestor(other fileRow, ancestor *db.AncestorEntry, useLWW bool) int {
 	// From FileInfo.WinsConflict
 	vc := e.Version.Compare(other.Version.Vector)
 	switch vc {
@@ -586,6 +644,11 @@ func (e fileRow) Compare(other fileRow) int {
 			}
 			return -1 // they are invalid, we win
 		}
+		if useLWW {
+			if d := compareLWWAncestor(e, other, ancestor); d != 0 {
+				return d
+			}
+		}
 		if d := cmp.Compare(e.Modified, other.Modified); d != 0 {
 			return -d // positive d means we were newer, so we win (negative return)
 		}
@@ -595,6 +658,28 @@ func (e fileRow) Compare(other fileRow) int {
 		return 1 // they win
 	default:
 		return 0
+	}
+}
+
+func compareLWWAncestor(e, other fileRow, ancestor *db.AncestorEntry) int {
+	eMatches := rowMatchesAncestor(e, ancestor)
+	otherMatches := rowMatchesAncestor(other, ancestor)
+	switch {
+	case eMatches && !otherMatches:
+		return 1
+	case !eMatches && otherMatches:
+		return -1
+	case rowsEqualByAncestorMetadata(e, other):
+		return cmp.Compare(e.DeviceIdx, other.DeviceIdx)
+	case e.Deleted && !other.Deleted:
+		return 1
+	case !e.Deleted && other.Deleted:
+		return -1
+	default:
+		if d := cmp.Compare(e.Modified, other.Modified); d != 0 {
+			return -d
+		}
+		return cmp.Compare(e.DeviceIdx, other.DeviceIdx)
 	}
 }
 

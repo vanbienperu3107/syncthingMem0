@@ -209,6 +209,11 @@ func (m metricsDB) Update(folder string, device protocol.DeviceID, fs []protocol
 	return m.DB.Update(folder, device, fs, opts...)
 }
 
+func (m metricsDB) SetFolderLWWReconciler(folder string, enabled bool) error {
+	defer m.account(folder, "SetFolderLWWReconciler")()
+	return m.DB.SetFolderLWWReconciler(folder, enabled)
+}
+
 func (m metricsDB) GetKV(key string) ([]byte, error) {
 	defer m.account("-", "GetKV")()
 	return m.DB.GetKV(key)

@@ -20,6 +20,7 @@ type folderDB struct {
 
 	localDeviceIdx  int64
 	deleteRetention time.Duration
+	useLWWReconciler bool
 }
 
 func openFolderDB(folder, path string, deleteRetention time.Duration) (*folderDB, error) {

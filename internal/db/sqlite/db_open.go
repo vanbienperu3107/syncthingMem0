@@ -33,6 +33,7 @@ type DB struct {
 	folderDBsMut   sync.RWMutex
 	folderDBs      map[string]*folderDB
 	folderDBOpener func(folder, path string, deleteRetention time.Duration) (*folderDB, error)
+	lwwFolders     map[string]bool
 }
 
 var _ db.DB = (*DB)(nil)
@@ -79,6 +80,7 @@ func Open(path string, opts ...Option) (*DB, error) {
 		baseDB:         mainBase,
 		folderDBs:      make(map[string]*folderDB),
 		folderDBOpener: openFolderDB,
+		lwwFolders:     make(map[string]bool),
 	}
 
 	for _, opt := range opts {
@@ -130,6 +132,7 @@ func OpenForMigration(path string) (*DB, error) {
 		baseDB:         mainBase,
 		folderDBs:      make(map[string]*folderDB),
 		folderDBOpener: openFolderDBForMigration,
+		lwwFolders:     make(map[string]bool),
 	}
 
 	if err := db.cleanDroppedFolders(); err != nil {

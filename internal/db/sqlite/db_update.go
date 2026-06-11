@@ -35,6 +35,7 @@ func (s *DB) DropFolder(folder string) error {
 		_ = os.Remove(fdb.path + "-shm")
 		delete(s.folderDBs, folder)
 	}
+	delete(s.lwwFolders, folder)
 	return wrap(err)
 }
 

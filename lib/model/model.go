@@ -348,6 +348,10 @@ func (m *model) addAndStartFolderLocked(cfg config.FolderConfiguration, cacheIgn
 
 // Only needed for testing, use addAndStartFolderLocked instead.
 func (m *model) addAndStartFolderLockedWithIgnores(cfg config.FolderConfiguration, ignores *ignore.Matcher) {
+	if err := m.sdb.SetFolderLWWReconciler(cfg.ID, cfg.UseLWWReconciler); err != nil {
+		panic(fmt.Errorf("setting LWW reconciler flag: %w", err))
+	}
+
 	m.folderCfgs[cfg.ID] = cfg
 	m.folderIgnores[cfg.ID] = ignores
 

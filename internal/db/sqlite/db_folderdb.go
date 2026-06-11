@@ -7,6 +7,7 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -88,8 +89,36 @@ func (s *DB) getFolderDB(folder string, create bool) (*folderDB, error) {
 	if err != nil {
 		return nil, wrap(err)
 	}
+	fdb.useLWWReconciler = s.lwwFolders[folder]
 	s.folderDBs[folder] = fdb
 	return fdb, nil
+}
+
+func (s *DB) SetFolderLWWReconciler(folder string, enabled bool) error {
+	s.folderDBsMut.Lock()
+	defer s.folderDBsMut.Unlock()
+	if enabled {
+		s.lwwFolders[folder] = true
+	} else {
+		delete(s.lwwFolders, folder)
+	}
+	if fdb, ok := s.folderDBs[folder]; ok {
+		fdb.updateLock.Lock()
+		defer fdb.updateLock.Unlock()
+		fdb.useLWWReconciler = enabled
+
+		tx, err := fdb.sql.BeginTxx(context.Background(), nil)
+		if err != nil {
+			return wrap(err)
+		}
+		defer tx.Rollback() //nolint:errcheck
+		txp := &txPreparedStmts{Tx: tx}
+		if err := fdb.recalcAllGlobalsForFolder(txp); err != nil {
+			return err
+		}
+		return wrap(tx.Commit())
+	}
+	return nil
 }
 
 func (s *DB) Update(folder string, device protocol.DeviceID, fs []protocol.FileInfo, opts ...db.UpdateOption) error {

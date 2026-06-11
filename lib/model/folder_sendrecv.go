@@ -593,7 +593,7 @@ func (f *sendReceiveFolder) handleDir(file protocol.FileInfo, dbUpdateChan chan<
 		}
 
 		// Remove it to replace with the dir.
-		if !curFile.IsSymlink() && file.InConflictWith(curFile) {
+		if !f.UseLWWReconciler && !curFile.IsSymlink() && file.InConflictWith(curFile) {
 			// The new file has been changed in conflict with the existing one. We
 			// should file it away as a conflict instead of just removing or
 			// archiving.
@@ -1676,7 +1676,7 @@ func (f *sendReceiveFolder) performFinish(file, curFile protocol.FileInfo, hasCu
 			return fmt.Errorf("checking existing file: %w", err)
 		}
 
-		if !curFile.IsDirectory() && !curFile.IsSymlink() && file.InConflictWith(curFile) {
+		if !f.UseLWWReconciler && !curFile.IsDirectory() && !curFile.IsSymlink() && file.InConflictWith(curFile) {
 			// The new file has been changed in conflict with the existing one. We
 			// should file it away as a conflict instead of just removing or
 			// archiving.
