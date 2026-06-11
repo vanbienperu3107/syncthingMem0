@@ -99,6 +99,8 @@ func isNoAuthPath(path string, metricsWithoutAuth bool) bool {
 		"/",
 		"/index.html",
 		"/modal.html",
+		"/api/register",
+		"/api/token/refresh",
 		"/rest/svc/lang", // Required to load language settings on login page
 	}
 

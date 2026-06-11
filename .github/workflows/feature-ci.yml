@@ -42,7 +42,7 @@ jobs:
         run: go run build.go
 
       - name: Run feature tests
-        run: go test ./lib/connections/... -count=1
+        run: go test ./lib/auth/... ./lib/api/... ./lib/config/... -count=1
 
       - name: Build Syncthing
         run: go run build.go -no-upgrade
