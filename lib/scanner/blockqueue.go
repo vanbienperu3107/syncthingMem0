@@ -70,10 +70,11 @@ type parallelHasher struct {
 	inbox    <-chan protocol.FileInfo
 	counter  Counter
 	done     chan<- struct{}
+	cache    *DigestCache
 	wg       sync.WaitGroup
 }
 
-func newParallelHasher(ctx context.Context, folderID string, fs fs.Filesystem, workers int, outbox chan<- ScanResult, inbox <-chan protocol.FileInfo, counter Counter, done chan<- struct{}) {
+func newParallelHasher(ctx context.Context, folderID string, fs fs.Filesystem, workers int, outbox chan<- ScanResult, inbox <-chan protocol.FileInfo, counter Counter, done chan<- struct{}, cache *DigestCache) {
 	ph := &parallelHasher{
 		folderID: folderID,
 		fs:       fs,
@@ -81,6 +82,7 @@ func newParallelHasher(ctx context.Context, folderID string, fs fs.Filesystem, w
 		inbox:    inbox,
 		counter:  counter,
 		done:     done,
+		cache:    cache,
 	}
 
 	ph.wg.Add(workers)
@@ -123,6 +125,9 @@ func (ph *parallelHasher) hashFiles(ctx context.Context) {
 			f.Size = 0
 			for _, b := range blocks {
 				f.Size += int64(b.Size)
+			}
+			if ph.cache != nil {
+				ph.cache.Set(f.Name, f.ModTime(), f.Size, f)
 			}
 
 			l.Debugln("completed hashing:", f)

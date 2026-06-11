@@ -67,6 +67,15 @@ type Config struct {
 	ScanXattrs bool
 	// Filter for extended attributes
 	XattrFilter XattrFilter
+	// Incremental controls optional snapshot/cache assisted scanning.
+	Incremental IncrementalConfig
+}
+
+type IncrementalConfig struct {
+	Enabled    bool
+	DirtyPaths map[string]struct{}
+	Baseline   *Snapshot
+	Cache      *DigestCache
 }
 
 type CurrentFiler interface {
@@ -136,7 +145,7 @@ func (w *walker) walk(ctx context.Context) chan ScanResult {
 	// We're not required to emit scan progress events, just kick off hashers,
 	// and feed inputs directly from the walker.
 	if w.ProgressTickIntervalS < 0 {
-		newParallelHasher(ctx, w.Folder, w.Filesystem, w.Hashers, finishedChan, toHashChan, nil, nil)
+		newParallelHasher(ctx, w.Folder, w.Filesystem, w.Hashers, finishedChan, toHashChan, nil, nil, w.incrementalCache())
 		return finishedChan
 	}
 
@@ -170,7 +179,7 @@ func (w *walker) walk(ctx context.Context) chan ScanResult {
 		done := make(chan struct{})
 		progress := newByteCounter()
 
-		newParallelHasher(ctx, w.Folder, w.Filesystem, w.Hashers, finishedChan, realToHashChan, progress, done)
+		newParallelHasher(ctx, w.Folder, w.Filesystem, w.Hashers, finishedChan, realToHashChan, progress, done, w.incrementalCache())
 
 		// A routine which actually emits the FolderScanProgress events
 		// every w.ProgressTicker ticks, until the hasher routines terminate.
@@ -421,7 +430,7 @@ func (w *walker) handleItem(ctx context.Context, path string, info fs.FileInfo, 
 		return w.walkDir(ctx, path, info, finishedChan)
 
 	case info.IsRegular():
-		return w.walkRegular(ctx, path, info, toHashChan)
+		return w.walkRegular(ctx, path, info, toHashChan, finishedChan)
 
 	default:
 		// A special file, socket, fifo, etc. -- do nothing, just skip and continue scanning.
@@ -430,7 +439,7 @@ func (w *walker) handleItem(ctx context.Context, path string, info fs.FileInfo, 
 	}
 }
 
-func (w *walker) walkRegular(ctx context.Context, relPath string, info fs.FileInfo, toHashChan chan<- protocol.FileInfo) error {
+func (w *walker) walkRegular(ctx context.Context, relPath string, info fs.FileInfo, toHashChan chan<- protocol.FileInfo, finishedChan chan<- ScanResult) error {
 	curFile, hasCurFile := w.CurrentFiler.CurrentFile(relPath)
 
 	blockSize := protocol.BlockSize(info.Size())
@@ -483,6 +492,16 @@ func (w *walker) walkRegular(ctx context.Context, relPath string, info fs.FileIn
 		l.Debugln(w, "rescan:", curFile)
 	}
 
+	if cached, ok := w.lookupIncrementalCache(relPath, info, f); ok {
+		l.Debugln(w, "cache hit:", relPath, cached)
+		select {
+		case finishedChan <- ScanResult{File: cached}:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		return nil
+	}
+
 	l.Debugln(w, "to hash:", relPath, f)
 
 	select {
@@ -492,6 +511,37 @@ func (w *walker) walkRegular(ctx context.Context, relPath string, info fs.FileIn
 	}
 
 	return nil
+}
+
+func (w *walker) lookupIncrementalCache(relPath string, info fs.FileInfo, fresh protocol.FileInfo) (protocol.FileInfo, bool) {
+	cache := w.incrementalCache()
+	if cache == nil {
+		return protocol.FileInfo{}, false
+	}
+	if w.Incremental.Baseline == nil || w.Incremental.Baseline.Size() == 0 {
+		return protocol.FileInfo{}, false
+	}
+	cached, ok := cache.Lookup(relPath, info.ModTime(), info.Size())
+	if !ok {
+		return protocol.FileInfo{}, false
+	}
+	if cached.BlockSize() != fresh.BlockSize() {
+		return protocol.FileInfo{}, false
+	}
+	cached.Version = fresh.Version
+	cached.ModifiedBy = fresh.ModifiedBy
+	cached.LocalFlags = fresh.LocalFlags
+	cached.NoPermissions = fresh.NoPermissions
+	cached.PreviousBlocksHash = fresh.PreviousBlocksHash
+	cached.Platform.MergeWith(&fresh.Platform)
+	return cached, true
+}
+
+func (w *walker) incrementalCache() *DigestCache {
+	if !w.Incremental.Enabled {
+		return nil
+	}
+	return w.Incremental.Cache
 }
 
 func (w *walker) walkDir(ctx context.Context, relPath string, info fs.FileInfo, finishedChan chan<- ScanResult) error {
