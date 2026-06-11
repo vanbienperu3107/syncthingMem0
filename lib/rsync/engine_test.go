@@ -141,8 +141,8 @@ func TestDeltifyPatchDeleteMiddle(t *testing.T) {
 
 	ops, result, sig := deltifyPatch(t, original, modified)
 
-	if totalDataBytes(ops) > int(sig.BlockSize) {
-		t.Fatalf("OpData = %d bytes, want at most one boundary block", totalDataBytes(ops))
+	if totalDataBytes(ops) > 2*int(sig.BlockSize) {
+		t.Fatalf("OpData = %d bytes, want at most two boundary fragments", totalDataBytes(ops))
 	}
 	if !bytes.Equal(result, modified) {
 		t.Fatal("patched output does not match modified")

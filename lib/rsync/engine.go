@@ -141,17 +141,17 @@ func (e *Engine) Deltify(reader io.Reader, sig *Signature, opHandler func(Operat
 	blockSize := int(sig.BlockSize)
 	pos := 0
 	for pos < len(data) {
-		if shortLastBlockMatchPossible(pos, len(data), sig) {
-			lastSize := int(sig.LastBlockSize)
-			if idx, ok := e.matchBlock(data[pos:pos+lastSize], weakMap, sig); ok {
-				if err := emitBlock(idx); err != nil {
-					return err
-				}
-				pos += lastSize
-				continue
-			}
-		}
 		if len(data)-pos < blockSize {
+			lastSize := int(sig.LastBlockSize)
+			if shortLastBlockMatchPossible(pos, len(data), sig) {
+				if idx, ok := e.matchBlock(data[pos:pos+lastSize], weakMap, sig); ok {
+					if err := emitBlock(idx); err != nil {
+						return err
+					}
+					pos += lastSize
+					continue
+				}
+			}
 			pending = append(pending, data[pos:]...)
 			break
 		}
@@ -165,6 +165,17 @@ func (e *Engine) Deltify(reader io.Reader, sig *Signature, opHandler func(Operat
 				}
 				pos += blockSize
 				break
+			}
+
+			if shortLastBlockMatchPossible(pos, len(data), sig) {
+				lastSize := int(sig.LastBlockSize)
+				if idx, ok := e.matchBlock(data[pos:pos+lastSize], weakMap, sig); ok {
+					if err := emitBlock(idx); err != nil {
+						return err
+					}
+					pos += lastSize
+					break
+				}
 			}
 
 			pending = append(pending, data[pos])
