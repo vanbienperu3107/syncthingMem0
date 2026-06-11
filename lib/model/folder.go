@@ -90,6 +90,9 @@ type folder struct {
 	versioner versioner.Versioner
 
 	warnedKqueue bool
+
+	incrementalSnapshot *scanner.Snapshot
+	incrementalCache    *scanner.DigestCache
 }
 
 type syncRequest struct {
@@ -140,6 +143,10 @@ func newFolder(model *model, ignores *ignore.Matcher, cfg config.FolderConfigura
 	f.pullPause = f.pullBasePause()
 	f.pullFailTimer = time.NewTimer(0)
 	<-f.pullFailTimer.C
+	if cfg.IncrementalScan {
+		f.incrementalSnapshot = scanner.NewSnapshot()
+		f.incrementalCache = scanner.NewDigestCache(cfg.DigestCacheEntries, 0)
+	}
 
 	registerFolderMetrics(f.ID)
 
@@ -703,6 +710,14 @@ func (f *folder) scanSubdirsChangedAndNew(ctx context.Context, subDirs []string,
 		ScanXattrs:            f.SendXattrs || f.SyncXattrs,
 		XattrFilter:           f.XattrFilter,
 	}
+	if f.IncrementalScan {
+		scanConfig.Incremental = scanner.IncrementalConfig{
+			Enabled:    true,
+			DirtyPaths: dirtyPathSet(subDirs),
+			Baseline:   f.incrementalSnapshot,
+			Cache:      f.incrementalCache,
+		}
+	}
 	var fchan chan scanner.ScanResult
 	if f.Type == config.FolderTypeReceiveEncrypted {
 		fchan = scanner.WalkWithoutHashing(scanCtx, scanConfig)
@@ -710,11 +725,13 @@ func (f *folder) scanSubdirsChangedAndNew(ctx context.Context, subDirs []string,
 		fchan = scanner.Walk(scanCtx, scanConfig)
 	}
 
+	var scanned []protocol.FileInfo
 	for res := range fchan {
 		if res.Err != nil {
 			f.newScanError(res.Path, res.Err)
 			continue
 		}
+		scanned = append(scanned, res.File)
 
 		if err := batch.FlushIfFull(); err != nil {
 			// Prevent a race between the scan aborting due to context
@@ -744,8 +761,25 @@ func (f *folder) scanSubdirsChangedAndNew(ctx context.Context, subDirs []string,
 			}
 		}
 	}
+	if f.IncrementalScan && f.incrementalSnapshot != nil {
+		f.incrementalSnapshot.Update(scanned, dirtyPathSet(subDirs))
+	}
 
 	return changes, nil
+}
+
+func dirtyPathSet(subDirs []string) map[string]struct{} {
+	if len(subDirs) == 0 {
+		return nil
+	}
+	dirty := make(map[string]struct{}, len(subDirs))
+	for _, sub := range subDirs {
+		if sub == "" || sub == "." {
+			return nil
+		}
+		dirty[sub] = struct{}{}
+	}
+	return dirty
 }
 
 func (f *folder) scanSubdirsDeletedAndIgnored(ctx context.Context, subDirs []string, batch *scanBatch) (int, error) {
@@ -840,6 +874,7 @@ outer:
 					nf.Version = protocol.Vector{}
 				}
 				f.sl.DebugContext(ctx, "Marking file as deleted", slogutil.FilePath(nf.Name))
+				f.dropIncrementalPath(nf.Name)
 				if ok, err := batch.Update(nf); err != nil {
 					return 0, err
 				} else if ok {
@@ -1029,6 +1064,18 @@ func (f *folder) scheduleWatchRestart() {
 		// We might be busy doing a pull and thus not reading from this
 		// channel. The channel is 1-buffered, so one notification will be
 		// queued to ensure we recheck after the pull.
+	}
+}
+
+func (f *folder) dropIncrementalPath(path string) {
+	if !f.IncrementalScan {
+		return
+	}
+	if f.incrementalCache != nil {
+		f.incrementalCache.RemovePrefix(path)
+	}
+	if f.incrementalSnapshot != nil {
+		f.incrementalSnapshot.Update(nil, map[string]struct{}{path: {}})
 	}
 }
 

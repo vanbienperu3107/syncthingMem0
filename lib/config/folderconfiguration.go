@@ -88,6 +88,8 @@ type FolderConfiguration struct {
 	SyncXattrs              bool                        `json:"syncXattrs" xml:"syncXattrs"`
 	SendXattrs              bool                        `json:"sendXattrs" xml:"sendXattrs"`
 	BlockIndexing           bool                        `json:"blockIndexing" xml:"blockIndexing" default:"true"`
+	IncrementalScan         bool                        `json:"incrementalScan" xml:"incrementalScan"`
+	DigestCacheEntries      int                         `json:"digestCacheEntries" xml:"digestCacheEntries"`
 	XattrFilter             XattrFilter                 `json:"xattrFilter" xml:"xattrFilter"`
 	// Legacy deprecated
 	DeprecatedReadOnly       bool    `json:"-" xml:"ro,attr,omitempty"`        // Deprecated: Do not use.
@@ -319,6 +321,10 @@ func (f *FolderConfiguration) prepare(myID protocol.DeviceID, existingDevices ma
 		f.MaxConcurrentWrites = maxConcurrentWritesDefault
 	} else if f.MaxConcurrentWrites > maxConcurrentWritesLimit {
 		f.MaxConcurrentWrites = maxConcurrentWritesLimit
+	}
+
+	if f.DigestCacheEntries < 0 {
+		f.DigestCacheEntries = 0
 	}
 
 	if f.Type == FolderTypeReceiveEncrypted {

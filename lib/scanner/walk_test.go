@@ -493,6 +493,68 @@ func TestWalkReceiveOnly(t *testing.T) {
 	}
 }
 
+func TestWalkIncrementalCacheHit(t *testing.T) {
+	testFs := fs.NewFilesystem(fs.FilesystemTypeFake, rand.String(16)+"?content=true&nostfolder=true")
+	if err := fs.WriteFile(testFs, "cached.txt", []byte("abc"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := testFs.Lstat("cached.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	blockSize := protocol.BlockSize(info.Size())
+	cached := protocol.FileInfo{
+		Name:         "cached.txt",
+		Type:         protocol.FileInfoTypeFile,
+		Size:         info.Size(),
+		ModifiedS:    info.ModTime().Unix(),
+		ModifiedNs:   int32(info.ModTime().Nanosecond()),
+		RawBlockSize: int32(blockSize),
+		Blocks: []protocol.BlockInfo{{
+			Hash: []byte{0xde, 0xad, 0xbe, 0xef},
+			Size: int(info.Size()),
+		}},
+	}
+	cached.BlocksHash = protocol.BlocksHash(cached.Blocks)
+
+	cache := NewDigestCache(10, 0)
+	cache.Set("cached.txt", info.ModTime(), info.Size(), cached)
+	baseline := NewSnapshotFromFiles([]protocol.FileInfo{cached})
+
+	current := cached
+	current.Blocks = nil
+	current.BlocksHash = nil
+	current.SetMustRescan()
+
+	cfg, cancel := testConfig()
+	defer cancel()
+	cfg.Filesystem = testFs
+	cfg.CurrentFiler = fakeCurrentFiler{"cached.txt": current}
+	cfg.Matcher = ignore.New(testFs)
+	cfg.Incremental = IncrementalConfig{
+		Enabled:    true,
+		DirtyPaths: map[string]struct{}{"cached.txt": {}},
+		Baseline:   baseline,
+		Cache:      cache,
+	}
+
+	fchan := Walk(context.TODO(), cfg)
+	var files []protocol.FileInfo
+	for res := range fchan {
+		if res.Err != nil {
+			t.Fatalf("scan error for %s: %v", res.Path, res.Err)
+		}
+		files = append(files, res.File)
+	}
+	if len(files) != 1 {
+		t.Fatalf("got %d files, want 1", len(files))
+	}
+	if len(files[0].Blocks) != 1 || !bytes.Equal(files[0].Blocks[0].Hash, cached.Blocks[0].Hash) {
+		t.Fatalf("incremental scan did not reuse cached blocks: %#v", files[0].Blocks)
+	}
+}
+
 func TestScanOwnershipPOSIX(t *testing.T) {
 	// This test works on all operating systems because the FakeFS is always POSIXy.
 
