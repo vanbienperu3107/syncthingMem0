@@ -7,6 +7,7 @@
 package scanner
 
 import (
+	pathpkg "path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -111,13 +112,15 @@ func (s *Snapshot) removeLocked(path string) {
 	}
 }
 
-func cleanSnapshotPath(path string) string {
-	path = filepath.Clean(path)
-	if path == "." {
+func cleanSnapshotPath(p string) string {
+	cleaned := strings.ReplaceAll(p, `\`, "/")
+	cleaned = pathpkg.Clean(cleaned)
+	cleaned = filepath.FromSlash(cleaned)
+	if cleaned == "." || cleaned == "" {
 		return ""
 	}
-	path = strings.TrimPrefix(path, "."+string(filepath.Separator))
-	return strings.Trim(path, string(filepath.Separator))
+	cleaned = strings.TrimPrefix(cleaned, "./")
+	return strings.Trim(cleaned, "/")
 }
 
 func cloneFileInfo(file protocol.FileInfo) protocol.FileInfo {

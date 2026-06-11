@@ -7,6 +7,7 @@
 package scanner
 
 import (
+	pathpkg "path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -161,14 +162,16 @@ func (c *DigestCache) evictOldestLocked() {
 	delete(c.entries, oldestPath)
 }
 
-func cleanCachePath(path string) string {
-	path = filepath.Clean(path)
-	if path == "." || path == "" {
+func cleanCachePath(p string) string {
+	cleaned := strings.ReplaceAll(p, `\`, "/")
+	cleaned = pathpkg.Clean(cleaned)
+	cleaned = filepath.FromSlash(cleaned)
+	if cleaned == "." || cleaned == "" {
 		return ""
 	}
 
-	path = strings.TrimPrefix(path, "."+string(filepath.Separator))
-	return strings.Trim(path, string(filepath.Separator))
+	cleaned = strings.TrimPrefix(cleaned, "./")
+	return strings.Trim(cleaned, "/")
 }
 
 func IsDirtyOrAncestor(path string, dirtyPaths map[string]struct{}) bool {
