@@ -621,10 +621,14 @@ jobs:
 
           go mod vendor
           go run build.go assets
+          output="$(pwd)/syncthing-source-$VERSION.tar.gz"
+          tmp="$(mktemp -d)"
 
-          tar c -z -f "syncthing-source-$VERSION.tar.gz" \
+          tar c -z -f "$tmp/syncthing-source-$VERSION.tar.gz" \
             --exclude .git \
-            .
+            --exclude "syncthing-source-$VERSION.tar.gz" .
+
+          mv "$tmp/syncthing-source-$VERSION.tar.gz" .
 
       - name: Archive artifacts
         uses: actions/upload-artifact@v4
