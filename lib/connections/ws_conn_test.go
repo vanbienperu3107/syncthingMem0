@@ -113,9 +113,9 @@ func TestWSConnConcurrentReadWrite(t *testing.T) {
 
 func TestFixupWSURI(t *testing.T) {
 	cases := map[string]string{
-		"wss://hub.example.com":		"wss://hub.example.com:443/ws",
-		"wss://hub.example.com/sync":	"wss://hub.example.com:443/sync",
-		"ws://127.0.0.1":		"ws://127.0.0.1:80/ws",
+		"wss://hub.example.com":      "wss://hub.example.com:443/ws",
+		"wss://hub.example.com/sync": "wss://hub.example.com:443/sync",
+		"ws://127.0.0.1":             "ws://127.0.0.1:80/ws",
 	}
 
 	for raw, expected := range cases {
