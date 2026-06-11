@@ -150,7 +150,9 @@ func (c *DigestCache) evictOldestLocked() {
 	var oldestTime time.Time
 	first := true
 	for path, entry := range c.entries {
-		if first || entry.CachedAt.Before(oldestTime) {
+		if first ||
+			entry.CachedAt.Before(oldestTime) ||
+			(entry.CachedAt.Equal(oldestTime) && (oldestPath == "" || path < oldestPath)) {
 			oldestPath = path
 			oldestTime = entry.CachedAt
 			first = false
@@ -160,10 +162,13 @@ func (c *DigestCache) evictOldestLocked() {
 }
 
 func cleanCachePath(path string) string {
-	path = filepath.ToSlash(path)
-	path = strings.ReplaceAll(path, `\`, "/")
-	path = strings.TrimPrefix(path, "./")
-	return strings.Trim(path, "/")
+	path = filepath.Clean(path)
+	if path == "." || path == "" {
+		return ""
+	}
+
+	path = strings.TrimPrefix(path, "."+string(filepath.Separator))
+	return strings.Trim(path, string(filepath.Separator))
 }
 
 func IsDirtyOrAncestor(path string, dirtyPaths map[string]struct{}) bool {
