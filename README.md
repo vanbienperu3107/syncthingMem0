@@ -1,26 +1,57 @@
 # syncthingMem0
 
-Bootstrap repository for Syncthing/Mem0 automation.
+Planned Syncthing/Mem0 fork for proxy-friendly continuous file synchronization.
 
-## Current State
+## Project Goal
 
-This repository currently contains project automation and deployment scaffolding:
+This project follows the architecture described in the internal
+"Architecture Summary" for a Syncthing-based fork that can:
+
+- sync in real time between a VPS hub and multiple personal devices
+- work through proxy-restricted networks that only allow HTTPS on port 443
+- replace certificate-based pairing with bearer-token authentication
+- reduce scan and transfer cost for large folders
+
+The target design is a hub-based synchronization model over HTTPS/WebSocket,
+not the default Syncthing transport and relay model.
+
+## Planned Architecture
+
+Compared with upstream Syncthing, the planned fork introduces five main changes:
+
+1. WSS transport over port 443 instead of the default TCP/TLS plus relay ports
+2. Bearer-token authentication with JWT instead of TLS client certificates
+3. Incremental scanning with dirty paths and digest cache instead of periodic
+   full-folder scans
+4. rsync-style delta transfer instead of fixed-block transfer
+5. Last-writer-wins with ancestor tracking instead of conflict copy files
+
+At a high level, the system is intended to look like this:
+
+- a VPS hub accepts HTTPS/WebSocket connections on port 443
+- each client device authenticates with a bearer token
+- synchronization, reconciliation, and metadata storage are centralized at the hub
+
+## Repository Status
+
+This repository currently contains bootstrap automation and deployment
+scaffolding for that planned fork:
 
 - CI workflow for Go repositories
-- Release workflow for version tags
-- Optional server deployment workflow for `strelaysrv` and `stdiscosrv`
-- Supporting documentation for CI/CD and VPS deployment
+- release workflow for version tags
+- optional deployment workflow for relay and discovery style services
+- supporting docs for CI/CD and VPS deployment
 
-At the moment, the repository does not yet contain the actual Go source code
-for `cmd/syncthing`, `cmd/strelaysrv`, or `cmd/stdiscosrv`.
+The actual Go source code for the planned fork has not been imported into this
+repository yet.
 
 That means:
 
-- CI passes in bootstrap mode when no Go module is present
-- release workflow is ready, but will only build once a root `go.mod` and
-  `cmd/syncthing` are added
-- optional server deploy is ready, but will only run when server source is
-  added to the repository
+- CI currently passes in bootstrap mode when no Go module is present
+- release automation is ready, but it will only build once a root `go.mod`
+  and `cmd/syncthing` are added
+- optional server deploy is ready, but it will only run once matching server
+  source exists in the repository
 
 ## Workflows
 
@@ -28,7 +59,7 @@ That means:
 - Release: `.github/workflows/release.yml`
 - Optional server deploy: `.github/workflows/deploy-optional-servers.yml`
 
-## Docs
+## Docs In This Repo
 
 - CI/CD guide: `docs/ci-cd.md`
 - Optional server deploy guide: `docs/deploy-servers.md`
@@ -42,9 +73,6 @@ git push origin v1.0.0
 
 ## Notes
 
-If this repository is later populated with Syncthing-based source code, the
-existing workflows are already structured to:
-
-- test detected Go modules automatically
-- build release artifacts for Linux, macOS, and Windows
-- build and deploy optional relay/discovery server images to a VPS
+The current README reflects the intended architecture from the project
+documentation, while also staying accurate about the present repository state:
+the implementation plan is defined, but the fork source itself is not yet here.
