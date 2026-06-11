@@ -113,6 +113,7 @@ func (s *Snapshot) removeLocked(path string) {
 
 func cleanSnapshotPath(path string) string {
 	path = filepath.ToSlash(path)
+	path = strings.ReplaceAll(path, `\`, "/")
 	path = strings.TrimPrefix(path, "./")
 	if path == "." {
 		return ""

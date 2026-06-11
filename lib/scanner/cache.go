@@ -161,6 +161,7 @@ func (c *DigestCache) evictOldestLocked() {
 
 func cleanCachePath(path string) string {
 	path = filepath.ToSlash(path)
+	path = strings.ReplaceAll(path, `\`, "/")
 	path = strings.TrimPrefix(path, "./")
 	return strings.Trim(path, "/")
 }

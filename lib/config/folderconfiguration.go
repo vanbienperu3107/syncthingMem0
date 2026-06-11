@@ -89,7 +89,7 @@ type FolderConfiguration struct {
 	SendXattrs              bool                        `json:"sendXattrs" xml:"sendXattrs"`
 	BlockIndexing           bool                        `json:"blockIndexing" xml:"blockIndexing" default:"true"`
 	IncrementalScan         bool                        `json:"incrementalScan" xml:"incrementalScan"`
-	DigestCacheEntries      int                         `json:"digestCacheEntries" xml:"digestCacheEntries" default:"10000"`
+	DigestCacheEntries      int                         `json:"digestCacheEntries" xml:"digestCacheEntries"`
 	XattrFilter             XattrFilter                 `json:"xattrFilter" xml:"xattrFilter"`
 	// Legacy deprecated
 	DeprecatedReadOnly       bool    `json:"-" xml:"ro,attr,omitempty"`        // Deprecated: Do not use.
