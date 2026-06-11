@@ -1,0 +1,164 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    name: Discover Go modules
+    runs-on: ubuntu-latest
+    outputs:
+      modules: ${{ steps.modules.outputs.modules }}
+      has_go: ${{ steps.modules.outputs.has_go }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Find modules
+        id: modules
+        shell: bash
+        run: |
+          mapfile -t mods < <(find . -name go.mod -not -path './.git/*' -printf '%h\n' | sort)
+          if [ "${#mods[@]}" -eq 0 ]; then
+            echo 'modules=[]' >> "$GITHUB_OUTPUT"
+            echo 'has_go=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          json=$(printf '%s\n' "${mods[@]}" | jq -R . | jq -s -c .)
+          echo "modules=$json" >> "$GITHUB_OUTPUT"
+          echo 'has_go=true' >> "$GITHUB_OUTPUT"
+
+  go-checks:
+    name: Go checks
+    needs: discover
+    if: needs.discover.outputs.has_go == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJson(needs.discover.outputs.modules) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      - name: Download dependencies
+        working-directory: ${{ matrix.module }}
+        run: go mod download
+
+      - name: Check formatting
+        working-directory: ${{ matrix.module }}
+        shell: bash
+        run: |
+          files=$(gofmt -l .)
+          if [ -n "$files" ]; then
+            echo "$files"
+            exit 1
+          fi
+
+      - name: Vet
+        working-directory: ${{ matrix.module }}
+        run: go vet ./...
+
+      - name: Test
+        working-directory: ${{ matrix.module }}
+        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ hashFiles(format('{0}/go.mod', matrix.module)) }}
+          path: ${{ matrix.module }}/coverage.out
+          if-no-files-found: ignore
+
+  build-smoke:
+    name: Build smoke
+    needs: discover
+    if: needs.discover.outputs.has_go == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: [linux, windows, darwin]
+        goarch: [amd64, arm64]
+    env:
+      BINARY_NAME: syncthingMem0
+      MAIN_PACKAGE: ./cmd/syncthing
+      CGO_ENABLED: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect root binary project
+        id: root
+        shell: bash
+        run: |
+          if [ -f go.mod ] && [ -d "${MAIN_PACKAGE#./}" ]; then
+            echo "has_root_project=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Root go.mod or $MAIN_PACKAGE not found; skipping smoke build."
+            echo "has_root_project=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Go
+        if: steps.root.outputs.has_root_project == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Build
+        if: steps.root.outputs.has_root_project == 'true'
+        shell: bash
+        run: |
+          suffix=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            suffix=".exe"
+          fi
+
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -trimpath -ldflags="-s -w" \
+            -o "dist/${BINARY_NAME}_${{ matrix.goos }}_${{ matrix.goarch }}${suffix}" \
+            "$MAIN_PACKAGE"
+
+  ci-result:
+    name: CI result
+    runs-on: ubuntu-latest
+    needs:
+      - discover
+      - go-checks
+      - build-smoke
+    if: always()
+    steps:
+      - name: Check result
+        shell: bash
+        run: |
+          if [ "${{ needs.discover.outputs.has_go }}" != "true" ]; then
+            echo "No Go modules found yet; repository bootstrap CI passed."
+            exit 0
+          fi
+
+          if [ "${{ needs.go-checks.result }}" != "success" ]; then
+            echo "Go checks failed."
+            exit 1
+          fi
+
+          if [ "${{ needs.build-smoke.result }}" != "success" ]; then
+            echo "Build smoke failed."
+            exit 1
+          fi
+
+          echo "CI passed."
