@@ -73,7 +73,7 @@ jobs:
 
           go run build.go -goos "${{ matrix.goos }}" -goarch "${{ matrix.goarch }}" zip "${{ matrix.target }}"
 
-          matches=(${{ matrix.target }}-${{ matrix.goos }}-${{ matrix.goarch }}*.zip)
+          matches=(${{ matrix.target }}-*-${{ matrix.goarch }}*.zip)
           if [ ${#matches[@]} -eq 0 ]; then
             echo "Build output not found for ${{ matrix.target }}"
             exit 1
@@ -87,7 +87,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.role }}-${{ matrix.target }}-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: ${{ matrix.role }}-${{ matrix.target }}-${{ matrix.goos }}-${{ matrix.goarch }}-*.zip
+          path: ${{ matrix.role }}-${{ matrix.target }}-*-${{ matrix.goarch }}*.zip
 
   publish-release:
     name: Publish Standalone Release Assets
