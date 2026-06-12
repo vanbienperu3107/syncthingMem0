@@ -138,6 +138,35 @@ jobs:
         if: matrix.goos == 'windows'
         shell: pwsh
         run: |
+          function Resolve-Tool {
+            param([string]$ToolName, [string]$HintPattern)
+            $tool = (Get-Command $ToolName -ErrorAction SilentlyContinue).Source
+            if (-not $tool) {
+              $searchRoots = @(
+                $env:ChocolateyInstall,
+                Join-Path $env:ChocolateyInstall "lib",
+                $env:ProgramFiles,
+                ${env:ProgramFiles(x86)},
+                Join-Path $env:ProgramFiles "WiX Toolset v3.11\\bin",
+                Join-Path $env:ProgramFiles "WiX Toolset v4\\bin"
+              ) | Where-Object { $_ }
+              foreach ($root in $searchRoots) {
+                $found = Get-ChildItem -Path $root -Recurse -Filter $HintPattern -File -ErrorAction SilentlyContinue |
+                  Select-Object -First 1 -ExpandProperty FullName
+                if ($found) {
+                  $tool = $found
+                  break
+                }
+              }
+            }
+            return $tool
+          }
+
+          if (-not $env:ChocolateyInstall) {
+            $env:ChocolateyInstall = "$env:ProgramData\chocolatey"
+          }
+          $env:Path = "$env:ChocolateyInstall\bin;$env:Path"
+
           $tag = "${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}"
           $installerFile = "${{ matrix.role }}-${{ matrix.target }}-${{ matrix.goos }}-${{ matrix.goarch }}.exe"
           $msiFile = "${{ matrix.role }}-${{ matrix.target }}-${{ matrix.goos }}-${{ matrix.goarch }}.msi"
@@ -145,7 +174,13 @@ jobs:
           $appDataDir = '${{ matrix.app_data_dir }}'
           $appSyncSubdir = '${{ matrix.app_sync_subdir }}'
 
-          makensis `
+          $makensis = Resolve-Tool -ToolName "makensis.exe" -HintPattern "makensis.exe"
+          if (-not $makensis) {
+            throw "Could not find makensis.exe after Chocolatey install."
+          }
+          Write-Host "Using makensis: $makensis"
+
+          & $makensis `
             "/DAPP_NAME=${{ matrix.app_name }}" `
             "/DVERSION=$tag" `
             "/DOUTPUT_FILE=$installerFile" `
@@ -162,8 +197,8 @@ jobs:
             -Path "$installerFile" `
             -Destination "release-artifacts/$installerFile"
 
-          $candle = (Get-Command candle.exe -ErrorAction SilentlyContinue).Source
-          $light = (Get-Command light.exe -ErrorAction SilentlyContinue).Source
+          $candle = Resolve-Tool -ToolName "candle.exe" -HintPattern "candle.exe"
+          $light = Resolve-Tool -ToolName "light.exe" -HintPattern "light.exe"
           if (-not $candle -or -not $light) {
             throw "WiX tooling (candle.exe/light.exe) not found on runner."
           }
