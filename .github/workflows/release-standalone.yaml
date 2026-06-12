@@ -173,6 +173,28 @@ jobs:
           $appArgs = '${{ matrix.app_args }}'
           $appDataDir = '${{ matrix.app_data_dir }}'
           $appSyncSubdir = '${{ matrix.app_sync_subdir }}'
+          $binaryName = "${{ matrix.target }}.exe"
+
+          $zipArtifact = Get-ChildItem -Path "release-artifacts" -Filter "${{ matrix.role }}-${{ matrix.target }}-${{ matrix.goos }}-${{ matrix.goarch }}*.zip" -File -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $zipArtifact) {
+            throw "Could not find Windows build zip in release-artifacts."
+          }
+
+          $stagingDir = "release-artifacts\\installer-binary"
+          if (Test-Path $stagingDir) {
+            Remove-Item -Recurse -Force $stagingDir
+          }
+          New-Item -ItemType Directory -Path $stagingDir | Out-Null
+          Expand-Archive -Path $zipArtifact.FullName -DestinationPath $stagingDir -Force
+
+          $binaryFromZip = Get-ChildItem -Path $stagingDir -Filter $binaryName -Recurse -File -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $binaryFromZip) {
+            throw "Could not locate installer binary '$binaryName' inside $($zipArtifact.FullName)"
+          }
+
+          Copy-Item -Path $binaryFromZip.FullName -Destination $binaryName -Force
 
           $makensis = Resolve-Tool -ToolName "makensis.exe" -HintPattern "makensis.exe"
           if (-not $makensis) {
