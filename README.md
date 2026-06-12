@@ -1,157 +1,110 @@
-# syncthingMem0
+[![Syncthing][14]][15]
 
-Planned Syncthing/Mem0 fork for proxy-friendly continuous file synchronization.
+---
 
-## Overview
+[![MPLv2 License](https://img.shields.io/badge/license-MPLv2-blue.svg?style=flat-square)](https://www.mozilla.org/MPL/2.0/)
+[![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/88/badge)](https://bestpractices.coreinfrastructure.org/projects/88)
+[![Go Report Card](https://goreportcard.com/badge/github.com/syncthing/syncthing)](https://goreportcard.com/report/github.com/syncthing/syncthing)
 
-This project is intended to evolve into a Syncthing-based fork that syncs data
-in real time between a VPS hub and multiple personal devices, while still
-working in networks that only allow HTTPS traffic on port 443.
+## Goals
 
-The target design is different from upstream Syncthing:
+Syncthing is a **continuous file synchronization program**. It synchronizes
+files between two or more computers. We strive to fulfill the goals below.
+The goals are listed in order of importance, the most important ones first.
+This is the summary version of the goal list - for more
+commentary, see the full [Goals document][13].
 
-- transport moves to HTTPS/WebSocket on port 443
-- authentication moves to bearer tokens instead of TLS client certificates
-- scanning becomes incremental instead of periodic full-folder rescans
-- transfer moves toward rsync-style delta exchange
-- conflict handling moves toward last-writer-wins with ancestor tracking
+Syncthing should be:
 
-## Architecture Summary
+1. **Safe From Data Loss**
 
-At a high level, the planned system looks like this:
+   Protecting the user's data is paramount. We take every reasonable
+   precaution to avoid corrupting the user's files.
 
-```text
-                +--------------------------------------+
-                | VPS Hub                              |
-                | HTTPS/WSS :443                       |
-                | JWT auth                             |
-                | Sync engine                          |
-                | Reconciler                           |
-                | Incremental scanner                  |
-                | rsync delta engine                   |
-                | Metadata store                       |
-                +-----------------+--------------------+
-                                  |
-               +------------------+------------------+
-               |                  |                  |
-             WSS                WSS                WSS
-               |                  |                  |
-         +-----------+      +-----------+      +-----------+
-         | Client A  |      | Client B  |      | Client C  |
-         +-----------+      +-----------+      +-----------+
-```
+2. **Secure Against Attackers**
 
-The intended traffic model is simple:
+   Again, protecting the user's data is paramount. Regardless of our other
+   goals, we must never allow the user's data to be susceptible to
+   eavesdropping or modification by unauthorized parties.
 
-1. A client authenticates to the VPS hub with a bearer token.
-2. The client connects over WSS on port 443.
-3. The hub coordinates metadata, reconciliation, and file transfer.
-4. Changes are scanned incrementally and transmitted as compact deltas when possible.
+3. **Easy to Use**
 
-## Planned Differences From Upstream
+   Syncthing should be approachable, understandable, and inclusive.
 
-| Area | Upstream Syncthing | Planned fork |
-|---|---|---|
-| Transport | TCP/TLS plus relay ports | WSS over HTTPS on port 443 |
-| Authentication | TLS client certificates | JWT bearer tokens |
-| Discovery/relay model | Native discovery and relay services | Hub-oriented connection model |
-| Scanning | Periodic full scan plus fsnotify | Incremental scan with dirty paths and cache |
-| Transfer | Fixed-size block exchange | rsync-style delta transfer |
-| Conflict handling | Conflict copy files | Last-writer-wins plus ancestor tracking |
+4. **Automatic**
 
-## Core Components
+   User interaction should be required only when absolutely necessary.
 
-### Hub
+5. **Universally Available**
 
-The hub is planned as the central coordination point. It accepts HTTPS and WSS
-connections, verifies bearer tokens, keeps synchronization state, and drives
-reconciliation and transfer decisions.
+   Syncthing should run on every common computer. We are mindful that the
+   latest technology is not always available to every individual.
 
-### Client
+6. **For Individuals**
 
-Each client connects to the hub using a device token. Clients are expected to
-watch local file changes, maintain local state, and exchange data with the hub
-over WebSocket transport.
+   Syncthing is primarily about empowering the individual user with safe,
+   secure, and easy to use file synchronization.
 
-### Authentication Layer
+7. **Everything Else**
 
-The planned authentication model replaces certificate-based identity with JWT
-tokens signed by a shared server secret. This is meant to simplify device
-registration and make the system friendlier to proxy-heavy environments.
+   There are many things we care about that don't make it on to the list. It
+   is fine to optimize for these values, as long as they are not in conflict
+   with the stated goals above.
 
-### Incremental Scanner
+## Getting Started
 
-Instead of walking the full folder tree on every scan interval, the planned
-scanner keeps baseline state, tracks dirty paths, and reuses cached file digests
-when metadata has not changed.
+Take a look at the [getting started guide][2].
 
-### Delta Transfer Engine
+There are a few examples for keeping Syncthing running in the background
+on your system in [the etc directory][3]. There are also several [GUI
+implementations][11] for Windows, Mac, and Linux.
 
-The planned transfer model is inspired by rsync: signatures, rolling hashes,
-strong verification, and small patch payloads when only parts of a file change.
+## Docker
 
-### Reconciler
+To run Syncthing in Docker, see [the Docker README][16].
 
-Conflict resolution is planned around last-writer-wins semantics with ancestor
-tracking so the system can distinguish one-sided change, two-sided change, and
-delete-versus-modify cases more accurately.
+## Getting in Touch
 
-## Planned Implementation Order
+The first and best point of contact is the [Forum][8].
+If you've found something that is clearly a
+bug, feel free to report it in the [GitHub issue tracker][10].
 
-1. WSS transport
-2. Bearer-token authentication
-3. Incremental scanner
-4. rsync delta transfer
-5. Last-writer-wins plus ancestor tracking
-6. Integration testing and release hardening
+If you believe that you’ve found a Syncthing-related security vulnerability,
+please report it by emailing security@syncthing.net. Do not report it in the
+Forum or issue tracker.
 
-## Repository Status
+## Building
 
-This repository currently contains bootstrap automation and deployment
-scaffolding for the planned fork, but not the fork source code itself.
+Building Syncthing from source is easy. After extracting the source bundle from
+a release or checking out git, you just need to run `go run build.go` and the
+binaries are created in `./bin`. There's [a guide][5] with more details on the
+build process.
 
-What is already here:
+## Signed Releases
 
-- CI workflow for Go repositories
-- release workflow for version tags
-- optional deployment workflow for server-style components
-- CI/CD and deployment documentation
+Release binaries are GPG signed with the key available from
+https://syncthing.net/security/. There is also a built-in automatic
+upgrade mechanism (disabled in some distribution channels) which uses a
+compiled in ECDSA signature. macOS and Windows binaries are also
+code-signed.
 
-What is not here yet:
+## Documentation
 
-- root `go.mod`
-- `cmd/syncthing`
-- hub implementation
-- WSS transport code
-- bearer-token auth code
-- scanner, delta, and reconciler implementation
+Please see the Syncthing [documentation site][6] [[source]][17].
 
-Because of that, the current automation behaves as bootstrap infrastructure:
+All code is licensed under the [MPLv2 License][7].
 
-- CI passes in bootstrap mode when no Go module is present
-- release workflow becomes active once the main Go project is added
-- optional deployment only becomes active when matching server code exists
-
-## Workflows
-
-- CI: `.github/workflows/ci.yml`
-- Release: `.github/workflows/release.yml`
-- Optional server deploy: `.github/workflows/deploy-optional-servers.yml`
-
-## Docs In This Repo
-
-- CI/CD guide: `docs/ci-cd.md`
-- Optional server deploy guide: `docs/deploy-servers.md`
-
-## Release Example
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-## Notes
-
-This README is aligned with the architecture summary and the current repository
-state at the same time: the target system is defined, but the implementation is
-still waiting to be imported or built in this repository.
+[1]: https://docs.syncthing.net/specs/bep-v1.html
+[2]: https://docs.syncthing.net/intro/getting-started.html
+[3]: https://github.com/syncthing/syncthing/blob/main/etc
+[5]: https://docs.syncthing.net/dev/building.html
+[6]: https://docs.syncthing.net/
+[7]: https://github.com/syncthing/syncthing/blob/main/LICENSE
+[8]: https://forum.syncthing.net/
+[10]: https://github.com/syncthing/syncthing/issues
+[11]: https://docs.syncthing.net/users/contrib.html#gui-wrappers
+[13]: https://github.com/syncthing/syncthing/blob/main/GOALS.md
+[14]: assets/logo-text-128.png
+[15]: https://syncthing.net/
+[16]: https://github.com/syncthing/syncthing/blob/main/README-Docker.md
+[17]: https://github.com/syncthing/docs

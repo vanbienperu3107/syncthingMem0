@@ -1,0 +1,298 @@
+name: Release Standalone Packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to package and publish
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-packages:
+    name: Build Standalone Binaries
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - role: client
+            target: syncthing
+            goos: windows
+            goarch: amd64
+            runs-on: windows-latest
+            app_name: "Syncthing Client"
+            service_name: "SyncthingClient"
+            service_display_name: "Syncthing Client"
+            service_description: "Syncthing client background service"
+            app_data_dir: '$PROGRAMDATA\Syncthing-Client'
+            app_args: '--no-browser --no-restart --home $PROGRAMDATA\Syncthing-Client'
+            app_sync_subdir: '\Sync'
+            msi_data_root: 'Syncthing-Client'
+            msi_data_subdir: 'Sync'
+            msi_args: '--no-browser --no-restart --home [CommonAppDataFolder]Syncthing-Client\\Sync'
+
+          - role: client
+            target: syncthing
+            goos: linux
+            goarch: amd64
+            runs-on: ubuntu-latest
+
+          - role: client
+            target: syncthing
+            goos: darwin
+            goarch: amd64
+            runs-on: macos-latest
+
+          - role: server
+            target: stdiscosrv
+            goos: linux
+            goarch: amd64
+            runs-on: ubuntu-latest
+
+          - role: server
+            target: stdiscosrv
+            goos: windows
+            goarch: amd64
+            runs-on: windows-latest
+            app_name: "Syncthing Discovery Server"
+            service_name: "SyncthingDiscovery"
+            service_display_name: "Syncthing Discovery Server"
+            service_description: "Syncthing discovery server background service"
+            app_data_dir: '$PROGRAMDATA\Syncthing-Discovery'
+            app_args: '--db-dir $PROGRAMDATA\Syncthing-Discovery\db --cert $PROGRAMDATA\Syncthing-Discovery\cert.pem --key $PROGRAMDATA\Syncthing-Discovery\key.pem'
+            app_sync_subdir: ''
+            msi_data_root: 'Syncthing-Discovery'
+            msi_data_subdir: ''
+            msi_args: '-db-dir [CommonAppDataFolder]Syncthing-Discovery\\db --cert [CommonAppDataFolder]Syncthing-Discovery\\cert.pem --key [CommonAppDataFolder]Syncthing-Discovery\\key.pem'
+
+          - role: server
+            target: strelaysrv
+            goos: linux
+            goarch: amd64
+            runs-on: ubuntu-latest
+
+          - role: server
+            target: strelaysrv
+            goos: windows
+            goarch: amd64
+            runs-on: windows-latest
+            app_name: "Syncthing Relay Server"
+            service_name: "SyncthingRelay"
+            service_display_name: "Syncthing Relay Server"
+            service_description: "Syncthing relay server background service"
+            app_data_dir: '$PROGRAMDATA\Syncthing-Relay'
+            app_args: '-keys $PROGRAMDATA\Syncthing-Relay'
+            app_sync_subdir: ''
+            msi_data_root: 'Syncthing-Relay'
+            msi_data_subdir: ''
+            msi_args: '-keys [CommonAppDataFolder]Syncthing-Relay'
+
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '~1.26.0'
+          cache: false
+          check-latest: true
+
+      - name: Install NSIS
+        if: matrix.goos == 'windows'
+        shell: pwsh
+        run: |
+          choco install nsis -y
+          choco install wixtoolset -y
+
+      - name: Build package
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          go run build.go -goos "${{ matrix.goos }}" -goarch "${{ matrix.goarch }}" zip "${{ matrix.target }}"
+
+          matches=(${{ matrix.target }}-*-${{ matrix.goarch }}*.zip)
+          if [ ${#matches[@]} -eq 0 ]; then
+            echo "Build output not found for ${{ matrix.target }}"
+            exit 1
+          fi
+          artifact_file="${matches[0]}"
+
+          release_file="${{ matrix.role }}-${artifact_file}"
+          mv "$artifact_file" "$release_file"
+          mkdir -p release-artifacts
+          mv "$release_file" "release-artifacts/"
+
+      - name: Build Windows installer
+        if: matrix.goos == 'windows'
+        shell: pwsh
+        run: |
+          function Resolve-Tool {
+            param([string]$ToolName, [string]$HintPattern)
+            $tool = (Get-Command $ToolName -ErrorAction SilentlyContinue).Source
+            if (-not $tool) {
+              $searchRoots = @()
+              $searchRoots += $env:ChocolateyInstall
+              $searchRoots += Join-Path $env:ChocolateyInstall "lib"
+              $searchRoots += $env:ProgramFiles
+              $searchRoots += ${env:ProgramFiles(x86)}
+              $searchRoots += Join-Path $env:ProgramFiles "WiX Toolset v3.11\\bin"
+              $searchRoots += Join-Path $env:ProgramFiles "WiX Toolset v4\\bin"
+              $searchRoots = $searchRoots | Where-Object { $_ }
+              foreach ($root in $searchRoots) {
+                $found = Get-ChildItem -Path $root -Recurse -Filter $HintPattern -File -ErrorAction SilentlyContinue |
+                  Select-Object -First 1 -ExpandProperty FullName
+                if ($found) {
+                  $tool = $found
+                  break
+                }
+              }
+            }
+            return $tool
+          }
+
+          if (-not $env:ChocolateyInstall) {
+            $env:ChocolateyInstall = "$env:ProgramData\chocolatey"
+          }
+          $env:Path = "$env:ChocolateyInstall\bin;$env:Path"
+
+          $tag = "${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}"
+          $installerFile = "${{ matrix.role }}-${{ matrix.target }}-${{ matrix.goos }}-${{ matrix.goarch }}.exe"
+          $msiFile = "${{ matrix.role }}-${{ matrix.target }}-${{ matrix.goos }}-${{ matrix.goarch }}.msi"
+          $appArgs = '${{ matrix.app_args }}'
+          $appDataDir = '${{ matrix.app_data_dir }}'
+          $appSyncSubdir = '${{ matrix.app_sync_subdir }}'
+          $binaryName = "${{ matrix.target }}.exe"
+
+          $zipArtifact = Get-ChildItem -Path "release-artifacts" -Filter "${{ matrix.role }}-${{ matrix.target }}-${{ matrix.goos }}-${{ matrix.goarch }}*.zip" -File -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $zipArtifact) {
+            throw "Could not find Windows build zip in release-artifacts."
+          }
+
+          $stagingDir = "release-artifacts\\installer-binary"
+          if (Test-Path $stagingDir) {
+            Remove-Item -Recurse -Force $stagingDir
+          }
+          New-Item -ItemType Directory -Path $stagingDir | Out-Null
+          Expand-Archive -Path $zipArtifact.FullName -DestinationPath $stagingDir -Force
+
+          $binaryFromZip = Get-ChildItem -Path $stagingDir -Filter $binaryName -Recurse -File -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $binaryFromZip) {
+            throw "Could not locate installer binary '$binaryName' inside $($zipArtifact.FullName)"
+          }
+
+          Copy-Item -Path $binaryFromZip.FullName -Destination $binaryName -Force
+
+          $makensis = Resolve-Tool -ToolName "makensis.exe" -HintPattern "makensis.exe"
+          if (-not $makensis) {
+            throw "Could not find makensis.exe after Chocolatey install."
+          }
+          Write-Host "Using makensis: $makensis"
+
+          & $makensis `
+            "/DAPP_NAME=${{ matrix.app_name }}" `
+            "/DVERSION=$tag" `
+            "/DOUTPUT_FILE=$installerFile" `
+            "/DSERVICE_NAME=${{ matrix.service_name }}" `
+            "/DSERVICE_DISPLAY_NAME=${{ matrix.service_display_name }}" `
+            "/DSERVICE_DESCRIPTION=${{ matrix.service_description }}" `
+            "/DBINARY_NAME=${{ matrix.target }}.exe" `
+            "/DAPP_DATA_DIR=$appDataDir" `
+            "/DAPP_ARGS=$appArgs" `
+            "/DSYNC_SUBDIR=$appSyncSubdir" `
+            "deploy/windows/syncthing-installer.nsi"
+
+          Move-Item `
+            -Path "$installerFile" `
+            -Destination "release-artifacts/$installerFile"
+
+          $candle = Resolve-Tool -ToolName "candle.exe" -HintPattern "candle.exe"
+          $light = Resolve-Tool -ToolName "light.exe" -HintPattern "light.exe"
+          if (-not $candle -or -not $light) {
+            throw "WiX tooling (candle.exe/light.exe) not found on runner."
+          }
+
+          $wixObj = "${{ matrix.target }}-${{ matrix.goos }}-${{ matrix.goarch }}.wixobj"
+          $serviceArgs = '${{ matrix.msi_args }}'
+
+          & $candle `
+            "-dAppName=${{ matrix.app_name }}" `
+            "-dAppVersion=$tag" `
+            "-dOutputFile=$installerFile" `
+            "-dServiceName=${{ matrix.service_name }}" `
+            "-dServiceDisplayName=${{ matrix.service_display_name }}" `
+            "-dServiceDescription=${{ matrix.service_description }}" `
+            "-dBinarySource=${{ matrix.target }}.exe" `
+            "-dDataRoot=${{ matrix.msi_data_root }}" `
+            "-dDataSubDir=${{ matrix.msi_data_subdir }}" `
+            "-dServiceArguments=$serviceArgs" `
+            "-out=release-artifacts/$wixObj" `
+            "deploy/windows/syncthing-installer.wxs"
+
+          & $light `
+            -ext "WixUtilExtension" `
+            "-out=release-artifacts/$msiFile" `
+            "release-artifacts/$wixObj"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.role }}-${{ matrix.target }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: release-artifacts
+
+  publish-release:
+    name: Publish Standalone Release Assets
+    needs: build-packages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Determine tag
+        id: tag
+        shell: bash
+        run: |
+          TAG="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}"
+          if [ -z "$TAG" ]; then
+            echo "No tag available for release publish."
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: release-artifacts
+
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release create "${RELEASE_TAG}" --title "${RELEASE_TAG}" --generate-notes
+          fi
+
+          files=$(find release-artifacts -type f \( -name '*.zip' -o -name '*.exe' -o -name '*.msi' \) | tr '\n' ' ')
+          if [ -z "$files" ]; then
+            echo "No release assets were produced."
+            exit 1
+          fi
+
+          gh release upload "${RELEASE_TAG}" $files --clobber
