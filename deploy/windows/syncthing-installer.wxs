@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?define AppName "Syncthing"?>
+<?define AppVersion "0.0.0"?>
+<?define OutputFile "syncthing-installer.msi"?>
+<?define ServiceName "Syncthing"?>
+<?define ServiceDisplayName "Syncthing"?>
+<?define ServiceDescription "Syncthing background service"?>
+<?define BinarySource "syncthing.exe"?>
+<?define DataRoot "Syncthing"?>
+<?define DataSubDir ""?>
+<?define ServiceArguments ""?>
+
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product
+    Id="*"
+    Name="$(var.AppName)"
+    Manufacturer="Syncthing"
+    UpgradeCode="{D0F4A6F6-6B0F-4A61-9A6E-4AF3E5BF1D4A}"
+    Version="$(var.AppVersion)"
+    Language="1033"
+    Codepage="1252"
+  >
+    <Package
+      InstallerVersion="500"
+      Compressed="yes"
+      InstallScope="perMachine"
+      InstallPrivileges="elevated"
+    />
+
+    <MajorUpgrade
+      DowngradeErrorMessage="A newer version of [ProductName] is already installed."
+    />
+
+    <MediaTemplate EmbedCab="yes" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="$(var.AppName)" />
+      </Directory>
+      <Directory Id="CommonAppDataFolder">
+        <Directory Id="CONFIGROOT" Name="$(var.DataRoot)">
+          <?if "$(var.DataSubDir)" != "" ?>
+          <Directory Id="CONFIGSUBDIR" Name="$(var.DataSubDir)" />
+          <?endif?>
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="AppComponent" Guid="*" Win64="yes">
+        <File Id="AppBinary" Source="$(var.BinarySource)" KeyPath="yes" />
+        <ServiceInstall
+          Id="SvcInstall"
+          Type="ownProcess"
+          Name="$(var.ServiceName)"
+          DisplayName="$(var.ServiceDisplayName)"
+          Description="$(var.ServiceDescription)"
+          Start="auto"
+          ErrorControl="normal"
+          Interactive="no"
+          Arguments="$(var.ServiceArguments)"
+          Account="LocalSystem"
+          Vital="yes"
+        />
+        <ServiceControl
+          Id="SvcControl"
+          Name="$(var.ServiceName)"
+          Start="install"
+          Stop="both"
+          Remove="uninstall"
+          Wait="yes"
+        />
+        <CreateFolder />
+        <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="CONFIGROOT">
+      <Component Id="ConfigRootComponent" Guid="*">
+        <CreateFolder />
+        <RemoveFolder Id="RemoveConfigRoot" On="uninstall" Directory="CONFIGROOT" />
+      </Component>
+    </DirectoryRef>
+
+    <?if "$(var.DataSubDir)" != "" ?>
+    <DirectoryRef Id="CONFIGSUBDIR">
+      <Component Id="ConfigSubdirComponent" Guid="*">
+        <CreateFolder />
+        <RemoveFolder Id="RemoveConfigSubdir" On="uninstall" Directory="CONFIGSUBDIR" />
+      </Component>
+    </DirectoryRef>
+    <?endif?>
+
+    <Feature Id="MainFeature" Title="$(var.AppName)" Level="1">
+      <ComponentRef Id="AppComponent" />
+      <ComponentRef Id="ConfigRootComponent" />
+      <?if "$(var.DataSubDir)" != "" ?>
+      <ComponentRef Id="ConfigSubdirComponent" />
+      <?endif?>
+    </Feature>
+  </Product>
+</Wix>
