@@ -142,14 +142,14 @@ jobs:
             param([string]$ToolName, [string]$HintPattern)
             $tool = (Get-Command $ToolName -ErrorAction SilentlyContinue).Source
             if (-not $tool) {
-              $searchRoots = @(
-                $env:ChocolateyInstall,
-                Join-Path $env:ChocolateyInstall "lib",
-                $env:ProgramFiles,
-                ${env:ProgramFiles(x86)},
-                Join-Path $env:ProgramFiles "WiX Toolset v3.11\\bin",
-                Join-Path $env:ProgramFiles "WiX Toolset v4\\bin"
-              ) | Where-Object { $_ }
+              $searchRoots = @()
+              $searchRoots += $env:ChocolateyInstall
+              $searchRoots += Join-Path $env:ChocolateyInstall "lib"
+              $searchRoots += $env:ProgramFiles
+              $searchRoots += ${env:ProgramFiles(x86)}
+              $searchRoots += Join-Path $env:ProgramFiles "WiX Toolset v3.11\\bin"
+              $searchRoots += Join-Path $env:ProgramFiles "WiX Toolset v4\\bin"
+              $searchRoots = $searchRoots | Where-Object { $_ }
               foreach ($root in $searchRoots) {
                 $found = Get-ChildItem -Path $root -Recurse -Filter $HintPattern -File -ErrorAction SilentlyContinue |
                   Select-Object -First 1 -ExpandProperty FullName
