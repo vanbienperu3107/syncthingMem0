@@ -35,7 +35,7 @@ jobs:
 
           - role: client
             target: syncthing
-            goos: macos
+            goos: darwin
             goarch: amd64
             runs-on: macos-latest
 
