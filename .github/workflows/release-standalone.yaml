@@ -1,0 +1,131 @@
+name: Release Standalone Packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to package and publish
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-packages:
+    name: Build Standalone Binaries
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - role: client
+            target: syncthing
+            goos: windows
+            goarch: amd64
+            runs-on: windows-latest
+
+          - role: client
+            target: syncthing
+            goos: linux
+            goarch: amd64
+            runs-on: ubuntu-latest
+
+          - role: client
+            target: syncthing
+            goos: darwin
+            goarch: amd64
+            runs-on: macos-latest
+
+          - role: server
+            target: stdiscosrv
+            goos: linux
+            goarch: amd64
+            runs-on: ubuntu-latest
+
+          - role: server
+            target: strelaysrv
+            goos: linux
+            goarch: amd64
+            runs-on: ubuntu-latest
+
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '~1.26.0'
+          cache: false
+          check-latest: true
+
+      - name: Build package
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          go run build.go -goos "${{ matrix.goos }}" -goarch "${{ matrix.goarch }}" zip "${{ matrix.target }}"
+
+          matches=(${{ matrix.target }}-${{ matrix.goos }}-${{ matrix.goarch }}*.zip)
+          if [ ${#matches[@]} -eq 0 ]; then
+            echo "Build output not found for ${{ matrix.target }}"
+            exit 1
+          fi
+          artifact_file="${matches[0]}"
+
+          release_file="${{ matrix.role }}-${artifact_file}"
+          mv "$artifact_file" "$release_file"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.role }}-${{ matrix.target }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ matrix.role }}-${{ matrix.target }}-${{ matrix.goos }}-${{ matrix.goarch }}-*.zip
+
+  publish-release:
+    name: Publish Standalone Release Assets
+    needs: build-packages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine tag
+        id: tag
+        shell: bash
+        run: |
+          TAG="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}"
+          if [ -z "$TAG" ]; then
+            echo "No tag available for release publish."
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: release-artifacts
+
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release create "${RELEASE_TAG}" --title "${RELEASE_TAG}" --generate-notes
+          fi
+
+          files=$(find release-artifacts -type f -name '*.zip' | tr '\n' ' ')
+          if [ -z "$files" ]; then
+            echo "No release assets were produced."
+            exit 1
+          fi
+
+          gh release upload "${RELEASE_TAG}" $files --clobber
