@@ -1,0 +1,100 @@
+name: Build client & server
+
+on:
+  pull_request:
+  push:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  client:
+    name: Build client assets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build client assets
+        run: |
+          go run build.go assets
+          tar -czf client-assets-${{ github.sha }}.tar.gz \
+            lib/api/auto/gui.files.go \
+            cmd/infra/strelaypoolsrv/auto/gui.files.go
+
+      - name: Upload client artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-assets
+          path: client-assets-${{ github.sha }}.tar.gz
+
+  server:
+    name: Build server binary
+    needs:
+      - client
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            ext: ""
+          - os: windows
+            ext: ".exe"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build server for ${{ matrix.os }}
+        run: |
+          GOOS=${{ matrix.os }} GOARCH=amd64 CGO_ENABLED=0 go run build.go build syncthing
+          tar -czf server-${{ matrix.os }}-amd64-${{ github.sha }}.tar.gz syncthing${{ matrix.ext }}
+
+      - name: Upload server binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-${{ matrix.os }}-amd64
+          path: server-${{ matrix.os }}-amd64-${{ github.sha }}.tar.gz
+
+  publish-release:
+    name: Đẩy build lên GitHub Release
+    if: github.event_name == 'release'
+    needs:
+      - client
+      - server
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download client artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: client-assets
+          path: artifacts/client
+
+      - name: Download server artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: server-*
+          path: artifacts/server
+          merge-multiple: true
+
+      - name: Upload assets to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/client/client-assets-${{ github.sha }}.tar.gz
+            artifacts/server/*.tar.gz
