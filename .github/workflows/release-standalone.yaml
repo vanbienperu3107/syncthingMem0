@@ -191,7 +191,15 @@ jobs:
           $binaryFromZip = Get-ChildItem -Path $stagingDir -Filter $binaryName -Recurse -File -ErrorAction SilentlyContinue |
             Select-Object -First 1
           if (-not $binaryFromZip) {
-            throw "Could not locate installer binary '$binaryName' inside $($zipArtifact.FullName)"
+            Write-Host "Exact match '$binaryName' not found inside $($zipArtifact.FullName). Trying fallback to first exe in archive."
+            $binaryFromZip = Get-ChildItem -Path $stagingDir -Filter "*.exe" -Recurse -File -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+            if (-not $binaryFromZip) {
+              Write-Host "Archive contents:"
+              Get-ChildItem -Path $stagingDir -Recurse -File | ForEach-Object { Write-Host " - $($_.FullName)" }
+              throw "Could not locate any installer binary inside $($zipArtifact.FullName)"
+            }
+            Write-Host "Using fallback binary '$($binaryFromZip.Name)'."
           }
 
           Copy-Item -Path $binaryFromZip.FullName -Destination $binaryName -Force
