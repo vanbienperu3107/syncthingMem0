@@ -48,8 +48,10 @@ jobs:
         include:
           - os: linux
             ext: ""
+            goos: linux
           - os: windows
             ext: ".exe"
+            goos: windows
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -62,7 +64,7 @@ jobs:
 
       - name: Build server for ${{ matrix.os }}
         run: |
-          GOOS=${{ matrix.os }} GOARCH=amd64 CGO_ENABLED=0 go run build.go build syncthing
+          CGO_ENABLED=0 go run build.go -goos=${{ matrix.goos }} -goarch=amd64 build syncthing
           tar -czf server-${{ matrix.os }}-amd64-${{ github.sha }}.tar.gz syncthing${{ matrix.ext }}
 
       - name: Upload server binary
