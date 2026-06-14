@@ -19,7 +19,7 @@ jobs:
       has_go: ${{ steps.modules.outputs.has_go }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.2
 
       - name: Find modules
         id: modules
@@ -47,10 +47,10 @@ jobs:
         module: ${{ fromJson(needs.discover.outputs.modules) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.2
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: ${{ matrix.module }}/go.mod
           cache-dependency-path: ${{ matrix.module }}/go.sum
@@ -78,7 +78,7 @@ jobs:
         run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-${{ hashFiles(format('{0}/go.mod', matrix.module)) }}
           path: ${{ matrix.module }}/coverage.out
@@ -100,7 +100,7 @@ jobs:
       CGO_ENABLED: "0"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.2
 
       - name: Detect root binary project
         id: root
@@ -115,7 +115,7 @@ jobs:
 
       - name: Setup Go
         if: steps.root.outputs.has_root_project == 'true'
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum

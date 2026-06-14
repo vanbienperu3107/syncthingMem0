@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6.0.2
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -32,7 +32,7 @@ jobs:
             cmd/infra/strelaypoolsrv/auto/gui.files.go
 
       - name: Upload client artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: client-assets
           path: client-assets-${{ github.sha }}.tar.gz
@@ -54,7 +54,7 @@ jobs:
             goos: windows
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6.0.2
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -68,7 +68,7 @@ jobs:
           tar -czf server-${{ matrix.os }}-amd64-${{ github.sha }}.tar.gz syncthing${{ matrix.ext }}
 
       - name: Upload server binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: server-${{ matrix.os }}-amd64
           path: server-${{ matrix.os }}-amd64-${{ github.sha }}.tar.gz
@@ -82,20 +82,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download client artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: client-assets
           path: artifacts/client
 
       - name: Download server artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: server-*
           path: artifacts/server
           merge-multiple: true
 
       - name: Upload assets to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             artifacts/client/client-assets-${{ github.sha }}.tar.gz
