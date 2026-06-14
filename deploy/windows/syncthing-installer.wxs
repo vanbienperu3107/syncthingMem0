@@ -23,6 +23,7 @@
     <Package
       InstallerVersion="500"
       Compressed="yes"
+      Platform="x64"
       InstallScope="perMachine"
       InstallPrivileges="elevated"
     />
