@@ -1,110 +1,169 @@
 name: Auto Release
 
-# Mục đích: Mỗi khi có commit được push lên nhánh main, workflow này sẽ tự động
-# build syncthingMem0 cho nhiều nền tảng và tạo một GitHub Release kèm binary tải về.
-# Đây là pipeline "push -> build -> release" hoàn toàn tự động, không cần build local.
+# Push lên main -> tự động:
+#   SERVER : build Docker image đa kiến trúc (amd64/arm64) đẩy lên GHCR  -> release server-vX
+#   CLIENT : build bản cài tự cấu hình cho Windows/macOS/Linux           -> release client-vX
+# Server và client KHÔNG còn chung 1 output: server là image để deploy,
+# client là gói cài (binary + script tự sinh config trỏ về hub).
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch: # cho phép bấm nút "Run workflow" chạy tay trên giao diện GitHub
+  workflow_dispatch:
 
-# Quyền cho GITHUB_TOKEN: cần "write" nội dung repo để tạo tag + release.
 permissions:
-  contents: write
+  contents: write # tạo tag + release
+  packages: write # đẩy image lên GHCR
 
 env:
-  CGO_ENABLED: "0" # build tĩnh, thuần Go -> cross-compile dễ dàng, không cần C toolchain
+  CGO_ENABLED: "0"
+  IMAGE: ghcr.io/vanbienperu3107/syncthingmem0-server
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # JOB 1: build binary cho từng cặp (hệ điều hành, kiến trúc CPU)
-  # ---------------------------------------------------------------------------
-  build:
-    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+  # ===========================================================================
+  # CLIENT — bản cài cho máy người dùng
+  # ===========================================================================
+  build-client:
+    name: Build client ${{ matrix.goos }}/${{ matrix.goarch }}
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false # một nền tảng lỗi không hủy các nền tảng còn lại
+      fail-fast: false
       matrix:
         include:
-          - { goos: linux, goarch: amd64 }
-          - { goos: linux, goarch: arm64 }
           - { goos: windows, goarch: amd64 }
           - { goos: darwin, goarch: amd64 }
           - { goos: darwin, goarch: arm64 }
+          - { goos: linux, goarch: amd64 }
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v5
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod # dùng đúng phiên bản Go khai báo trong go.mod
-          cache: true # cache module để các lần build sau nhanh hơn
-
+          go-version-file: go.mod
+          cache: true
       - name: Generate GUI assets
-        # Sinh file lib/api/auto/gui.files.go (nhúng giao diện web vào binary).
-        # File này nằm trong .gitignore nên phải sinh lại mỗi lần build.
         run: go generate ./lib/api/auto
-
-      - name: Build binary
+      - name: Build + đóng gói bản cài client
         shell: bash
         run: |
           set -euo pipefail
-          bin="syncthing"
-          if [ "${{ matrix.goos }}" = "windows" ]; then bin="syncthing.exe"; fi
-          out="syncthing-${{ matrix.goos }}-${{ matrix.goarch }}"
-          mkdir -p build dist
+          bin="syncthing"; [ "${{ matrix.goos }}" = "windows" ] && bin="syncthing.exe"
+          pkg="syncthingMem0-client-${{ matrix.goos }}-${{ matrix.goarch }}"
+          mkdir -p "stage/$pkg" dist
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
-            go build -trimpath -ldflags="-s -w" -o "build/$bin" ./cmd/syncthing
+            go build -trimpath -ldflags="-s -w" -o "stage/$pkg/$bin" ./cmd/syncthing
+          cp packaging/client/README.md "stage/$pkg/"
           if [ "${{ matrix.goos }}" = "windows" ]; then
-            (cd build && zip "../dist/$out.zip" "$bin")
+            cp packaging/client/install.ps1 "stage/$pkg/"
+            (cd stage && zip -r "../dist/$pkg.zip" "$pkg")
           else
-            tar -czf "dist/$out.tar.gz" -C build "$bin"
+            cp packaging/client/install.sh "stage/$pkg/"
+            chmod +x "stage/$pkg/install.sh"
+            tar -czf "dist/$pkg.tar.gz" -C stage "$pkg"
           fi
           ls -la dist
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: syncthing-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: client-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
           if-no-files-found: error
 
-  # ---------------------------------------------------------------------------
-  # JOB 2: gom tất cả binary và tạo GitHub Release
-  # ---------------------------------------------------------------------------
-  release:
-    name: Publish GitHub Release
-    needs: build # chỉ chạy sau khi job build thành công
+  release-client:
+    name: Publish CLIENT release
+    needs: build-client
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
+          pattern: client-*
           path: artifacts
-          merge-multiple: true # gộp mọi artifact vào một thư mục phẳng
-
-      - name: List artifacts
-        run: ls -laR artifacts
-
-      - name: Compute release tag
-        id: ver
-        shell: bash
-        # Mỗi lần build tạo một tag duy nhất theo số thứ tự lần chạy workflow,
-        # ví dụ: v0.1.0-build.12 -> tránh trùng tag, mỗi push là một release mới.
-        run: echo "tag=v0.1.0-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+          merge-multiple: true
+      - run: ls -laR artifacts
+      - id: ver
+        run: echo "tag=client-v0.1.0-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+      - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
-          name: syncthingMem0 ${{ steps.ver.outputs.tag }}
+          name: syncthingMem0 CLIENT ${{ steps.ver.outputs.tag }}
           body: |
-            Bản build tự động từ commit ${{ github.sha }} trên nhánh `main`.
-            Chỉ giữ transport WSS:443, JWT auth, hub model (đã loại bỏ relay/discovery/TCP/QUIC/NAT).
-          generate_release_notes: true # tự sinh changelog từ commit/PR
+            **Bản CLIENT** — bản cài tự tạo cấu hình cho máy cá nhân.
+            Giải nén, chạy `install.sh` (Linux/macOS) hoặc `install.ps1` (Windows);
+            trình cài tự sinh khóa + config trỏ về hub (WSS:443). Xem README trong gói.
+            Build từ commit ${{ github.sha }}.
+          generate_release_notes: true
           files: artifacts/**/*
+
+  # ===========================================================================
+  # SERVER — Docker image cho hub trên VPS
+  # ===========================================================================
+  build-server-image:
+    name: Build & push SERVER image (GHCR)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Generate GUI assets
+        run: go generate ./lib/api/auto
+      - name: Cross-compile binary linux cho image (amd64, arm64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH=$arch go build -trimpath -ldflags="-s -w" \
+              -o "syncthing-linux-$arch" ./cmd/syncthing
+          done
+          ls -la syncthing-linux-*
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: ver
+        run: echo "tag=v0.1.0-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+      - name: Build & push (amd64 + arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ steps.ver.outputs.tag }}
+
+  release-server:
+    name: Publish SERVER release
+    needs: build-server-image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - id: ver
+        run: echo "tag=server-v0.1.0-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: syncthingMem0 SERVER ${{ steps.ver.outputs.tag }}
+          body: |
+            **Bản SERVER (hub)** — Docker image đa kiến trúc cho VPS.
+
+            ```
+            docker pull ${{ env.IMAGE }}:v0.1.0-build.${{ github.run_number }}
+            # hoặc: docker pull ${{ env.IMAGE }}:latest
+            ```
+            Deploy nhanh bằng `deploy/server/docker-compose.yml` (đính kèm).
+            Nhớ đặt `HubSecret` (>=32 ký tự) trong config trước khi dùng thật.
+            Build từ commit ${{ github.sha }}.
+          files: deploy/server/docker-compose.yml

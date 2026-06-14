@@ -37,7 +37,8 @@ LABEL org.opencontainers.image.authors="The Syncthing Project" \
       org.opencontainers.image.licenses="MPL-2.0" \
       org.opencontainers.image.title="Syncthing"
 
-EXPOSE 8384 22000/tcp 22000/udp 21027/udp
+# Hub model: WSS transport trên 443, GUI/REST trên 8384.
+EXPOSE 443/tcp 8384/tcp
 
 VOLUME ["/var/syncthing"]
 

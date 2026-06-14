@@ -1,0 +1,33 @@
+# syncthingMem0 — SERVER (hub) deployment
+#
+# Chạy hub trên VPS. Hub lắng nghe WSS:443 cho thiết bị kết nối, và GUI/REST ở 8384.
+#
+# BẮT BUỘC trước khi dùng thật: đặt HubSecret (>= 32 ký tự) trong config của hub,
+# nếu không endpoint /api/register sẽ trả 503 và thiết bị không lấy được token.
+# Cách đặt nhanh sau khi container tạo config lần đầu:
+#   1) docker compose up -d
+#   2) sửa ./data/config/config.xml: thêm <hubSecret>CHUOI_BI_MAT_>=32_KY_TU</hubSecret>
+#      và (khuyến nghị) <registrationSecret>CHUOI_KHAC</registrationSecret>
+#   3) docker compose restart
+#
+# Tải image: docker pull ghcr.io/vanbienperu3107/syncthingmem0-server:latest
+
+services:
+  syncthing-hub:
+    image: ghcr.io/vanbienperu3107/syncthingmem0-server:latest
+    container_name: syncthingmem0-hub
+    restart: unless-stopped
+    ports:
+      - "443:443"     # WSS hub — thiết bị kết nối qua đây
+      - "127.0.0.1:8384:8384" # GUI/REST — chỉ mở localhost, dùng SSH tunnel để truy cập
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - STGUIADDRESS=0.0.0.0:8384
+    volumes:
+      - ./data:/var/syncthing   # config + dữ liệu hub
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fkLsS -m 2 127.0.0.1:8384/rest/noauth/health | grep -o OK || exit 1"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
