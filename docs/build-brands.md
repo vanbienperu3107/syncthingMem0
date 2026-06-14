@@ -3,7 +3,7 @@
 This repo now contains two runtime brands:
 
 - `client` -> `cmd/syncthing`
-- `server` -> `cmd/stdiscosrv` + `cmd/strelaysrv`
+- `server` -> removed (WSS hub model, no separate relay/discovery servers)
 
 You can build each brand independently with dedicated scripts.
 
@@ -41,6 +41,6 @@ Output folders:
 ```
 
 ### Notes
-- `server` brand by default builds only relay + disco services (core server).
-- `-IncludeInfra` adds: `strelaypoolsrv`, `stupgrades`, `stcrashreceiver`, `ursrv`.
+- `server` brand removed in syncthingMem0 (WSS-only hub model).
+- `-IncludeInfra` adds: `stupgrades`, `stcrashreceiver`, `ursrv`.
 - You can run client and server artifacts in separate hosts.

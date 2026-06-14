@@ -33,9 +33,7 @@ import (
 	"github.com/syncthing/syncthing/lib/build"
 	"github.com/syncthing/syncthing/lib/config"
 	"github.com/syncthing/syncthing/lib/connections/registry"
-	"github.com/syncthing/syncthing/lib/discover"
 	"github.com/syncthing/syncthing/lib/events"
-	"github.com/syncthing/syncthing/lib/nat"
 	"github.com/syncthing/syncthing/lib/osutil"
 	"github.com/syncthing/syncthing/lib/protocol"
 	"github.com/syncthing/syncthing/lib/semaphore"
@@ -43,9 +41,6 @@ import (
 	"github.com/syncthing/syncthing/lib/stringutil"
 	"github.com/syncthing/syncthing/lib/svcutil"
 
-	// Registers NAT service providers
-	_ "github.com/syncthing/syncthing/lib/pmp"
-	_ "github.com/syncthing/syncthing/lib/upnp"
 )
 
 var (
@@ -128,10 +123,8 @@ var tlsVersionNames = map[uint16]string{
 // dialers. Successful connections are handed to the model.
 type Service interface {
 	suture.Service
-	discover.AddressLister
 	ListenerStatus() map[string]ListenerStatusEntry
 	ConnectionStatus() map[string]ConnectionStatusEntry
-	NATType() string
 }
 
 type ListenerStatusEntry struct {
@@ -162,13 +155,11 @@ type service struct {
 	myID                 protocol.DeviceID
 	model                Model
 	tlsCfg               *tls.Config
-	discoverer           discover.Finder
 	conns                chan internalConn
 	hellos               chan *connWithHello
 	bepProtocolName      string
 	tlsDefaultCommonName string
 	limiter              *limiter
-	natService           *nat.Service
 	evLogger             events.Logger
 	registry             *registry.Registry
 	keyGen               *protocol.KeyGenerator
@@ -183,7 +174,7 @@ type service struct {
 	listenerTokens map[string]suture.ServiceToken
 }
 
-func NewService(cfg config.Wrapper, myID protocol.DeviceID, mdl Model, tlsCfg *tls.Config, discoverer discover.Finder, bepProtocolName string, tlsDefaultCommonName string, evLogger events.Logger, registry *registry.Registry, keyGen *protocol.KeyGenerator) Service {
+func NewService(cfg config.Wrapper, myID protocol.DeviceID, mdl Model, tlsCfg *tls.Config, bepProtocolName string, tlsDefaultCommonName string, evLogger events.Logger, registry *registry.Registry, keyGen *protocol.KeyGenerator) Service {
 	spec := svcutil.SpecWithInfoLogger()
 	service := &service{
 		Supervisor:              suture.New("connections.Service", spec),
@@ -193,13 +184,11 @@ func NewService(cfg config.Wrapper, myID protocol.DeviceID, mdl Model, tlsCfg *t
 		myID:                 myID,
 		model:                mdl,
 		tlsCfg:               tlsCfg,
-		discoverer:           discoverer,
 		conns:                make(chan internalConn),
 		hellos:               make(chan *connWithHello),
 		bepProtocolName:      bepProtocolName,
 		tlsDefaultCommonName: tlsDefaultCommonName,
 		limiter:              newLimiter(myID, cfg),
-		natService:           nat.NewService(myID, cfg),
 		evLogger:             evLogger,
 		registry:             registry,
 		keyGen:               keyGen,
@@ -228,7 +217,6 @@ func NewService(cfg config.Wrapper, myID protocol.DeviceID, mdl Model, tlsCfg *t
 	service.Add(svcutil.AsService(service.connect, fmt.Sprintf("%s/connect", service)))
 	service.Add(svcutil.AsService(service.handleConns, fmt.Sprintf("%s/handleConns", service)))
 	service.Add(svcutil.AsService(service.handleHellos, fmt.Sprintf("%s/handleHellos", service)))
-	service.Add(service.natService)
 
 	svcutil.OnSupervisorDone(service.Supervisor, func() {
 		service.cfg.Unsubscribe(service.limiter)
@@ -712,11 +700,7 @@ func (s *service) resolveDeviceAddrs(ctx context.Context, cfg config.DeviceConfi
 	var addrs []string
 	for _, addr := range cfg.Addresses {
 		if addr == "dynamic" {
-			if s.discoverer != nil {
-				if t, err := s.discoverer.Lookup(ctx, cfg.DeviceID); err == nil {
-					addrs = append(addrs, t...)
-				}
-			}
+			// Discovery removed - dynamic addresses not supported in hub model
 		} else {
 			addrs = append(addrs, addr)
 		}
@@ -799,7 +783,7 @@ func (s *service) createListener(factory listenerFactory, uri *url.URL) bool {
 
 	slog.Debug("Starting listener", "uri", uri)
 
-	listener := factory.New(uri, s.cfg, s.tlsCfg, s.conns, s.natService, s.registry, s.lanChecker)
+	listener := factory.New(uri, s.cfg, s.tlsCfg, s.conns, s.registry, s.lanChecker)
 	listener.OnAddressesChanged(s.logListenAddressesChangedEvent)
 
 	// Retrying a listener many times in rapid succession is unlikely to help,
@@ -1019,14 +1003,6 @@ func (s *connectionStatusHandler) setConnectionStatus(address string, err error)
 }
 
 func (s *service) NATType() string {
-	s.listenersMut.RLock()
-	defer s.listenersMut.RUnlock()
-	for _, listener := range s.listeners {
-		natType := listener.NATType()
-		if natType != "unknown" {
-			return natType
-		}
-	}
 	return "unknown"
 }
 

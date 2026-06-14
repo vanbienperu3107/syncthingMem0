@@ -7,8 +7,6 @@ require (
 	github.com/alecthomas/kong v1.15.0
 	github.com/aws/aws-sdk-go v1.55.8
 	github.com/calmh/incontainer v1.0.0
-	github.com/calmh/xdr v1.2.0
-	github.com/ccding/go-stun v0.1.5
 	github.com/coreos/go-semver v0.3.1
 	github.com/d4l3k/messagediff v1.2.1
 	github.com/getsentry/raven-go v0.2.0
@@ -18,7 +16,6 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/jackpal/gateway v1.1.1
-	github.com/jackpal/go-nat-pmp v1.0.2
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
@@ -30,8 +27,6 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.26
 	github.com/prometheus/client_golang v1.23.2
 	github.com/puzpuzpuz/xsync/v3 v3.5.1
-	github.com/quic-go/quic-go v0.59.0
-	github.com/rabbitmq/amqp091-go v1.11.0
 	github.com/rcrowley/go-metrics v0.0.0-20250401214520-65e299d6c5c9
 	github.com/shirou/gopsutil/v4 v4.26.4
 	github.com/syncthing/notify v0.0.0-20250528144937-c7027d4f7465
@@ -55,6 +50,7 @@ require (
 require (
 	github.com/Azure/go-ntlmssp v0.1.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/calmh/xdr v1.2.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/certifi/gocertifi v0.0.0-20210507211836-431795d63e8d // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

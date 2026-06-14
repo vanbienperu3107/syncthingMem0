@@ -1,0 +1,110 @@
+name: Auto Release
+
+# Mục đích: Mỗi khi có commit được push lên nhánh main, workflow này sẽ tự động
+# build syncthingMem0 cho nhiều nền tảng và tạo một GitHub Release kèm binary tải về.
+# Đây là pipeline "push -> build -> release" hoàn toàn tự động, không cần build local.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # cho phép bấm nút "Run workflow" chạy tay trên giao diện GitHub
+
+# Quyền cho GITHUB_TOKEN: cần "write" nội dung repo để tạo tag + release.
+permissions:
+  contents: write
+
+env:
+  CGO_ENABLED: "0" # build tĩnh, thuần Go -> cross-compile dễ dàng, không cần C toolchain
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # JOB 1: build binary cho từng cặp (hệ điều hành, kiến trúc CPU)
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # một nền tảng lỗi không hủy các nền tảng còn lại
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod # dùng đúng phiên bản Go khai báo trong go.mod
+          cache: true # cache module để các lần build sau nhanh hơn
+
+      - name: Generate GUI assets
+        # Sinh file lib/api/auto/gui.files.go (nhúng giao diện web vào binary).
+        # File này nằm trong .gitignore nên phải sinh lại mỗi lần build.
+        run: go generate ./lib/api/auto
+
+      - name: Build binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="syncthing"
+          if [ "${{ matrix.goos }}" = "windows" ]; then bin="syncthing.exe"; fi
+          out="syncthing-${{ matrix.goos }}-${{ matrix.goarch }}"
+          mkdir -p build dist
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -trimpath -ldflags="-s -w" -o "build/$bin" ./cmd/syncthing
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            (cd build && zip "../dist/$out.zip" "$bin")
+          else
+            tar -czf "dist/$out.tar.gz" -C build "$bin"
+          fi
+          ls -la dist
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: syncthing-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # JOB 2: gom tất cả binary và tạo GitHub Release
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publish GitHub Release
+    needs: build # chỉ chạy sau khi job build thành công
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true # gộp mọi artifact vào một thư mục phẳng
+
+      - name: List artifacts
+        run: ls -laR artifacts
+
+      - name: Compute release tag
+        id: ver
+        shell: bash
+        # Mỗi lần build tạo một tag duy nhất theo số thứ tự lần chạy workflow,
+        # ví dụ: v0.1.0-build.12 -> tránh trùng tag, mỗi push là một release mới.
+        run: echo "tag=v0.1.0-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: syncthingMem0 ${{ steps.ver.outputs.tag }}
+          body: |
+            Bản build tự động từ commit ${{ github.sha }} trên nhánh `main`.
+            Chỉ giữ transport WSS:443, JWT auth, hub model (đã loại bỏ relay/discovery/TCP/QUIC/NAT).
+          generate_release_notes: true # tự sinh changelog từ commit/PR
+          files: artifacts/**/*

@@ -1,10 +1,9 @@
 name: CI
 
+# CI kiểm tra format/vet/test, chạy cho pull request và chạy tay.
+# Không gắn vào push:main nữa để nhánh main dành riêng cho pipeline auto-release.yml.
 on:
   pull_request:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
@@ -69,6 +68,14 @@ jobs:
             exit 1
           fi
 
+      - name: Generate assets
+        # Sinh GUI assets sau bước kiểm format (vì file sinh ra không cần đạt gofmt)
+        # nhưng trước vet/test (vì gói lib/api cần auto.Assets để biên dịch).
+        working-directory: ${{ matrix.module }}
+        shell: bash
+        run: |
+          if [ -d lib/api/auto ]; then go generate ./lib/api/auto; fi
+
       - name: Vet
         working-directory: ${{ matrix.module }}
         run: go vet ./...
@@ -119,6 +126,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
+
+      - name: Generate assets
+        if: steps.root.outputs.has_root_project == 'true'
+        run: go generate ./lib/api/auto
 
       - name: Build
         if: steps.root.outputs.has_root_project == 'true'

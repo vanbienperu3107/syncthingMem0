@@ -39,51 +39,17 @@ const (
 )
 
 var (
-	// DefaultTCPPort defines default TCP port used if the URI does not specify one, for example tcp://0.0.0.0
-	DefaultTCPPort = 22000
-	// DefaultQUICPort defines default QUIC port used if the URI does not specify one, for example quic://0.0.0.0
-	DefaultQUICPort = 22000
+	// DefaultWSSPort defines the default WSS port for hub connections.
+	DefaultWSSPort = 443
 	// DefaultListenAddresses should be substituted when the configuration
 	// contains <listenAddress>default</listenAddress>. This is done by the
 	// "consumer" of the configuration as we don't want these saved to the
 	// config.
 	DefaultListenAddresses = []string{
-		netutil.AddressURL("tcp", net.JoinHostPort("0.0.0.0", strconv.Itoa(DefaultTCPPort))),
-		"dynamic+https://relays.syncthing.net/endpoint",
-		netutil.AddressURL("quic", net.JoinHostPort("0.0.0.0", strconv.Itoa(DefaultQUICPort))),
+		netutil.AddressURL("wss", net.JoinHostPort("0.0.0.0", strconv.Itoa(DefaultWSSPort))),
 	}
-	// DefaultDiscoveryServersV4 should be substituted when the configuration
-	// contains <globalAnnounceServer>default-v4</globalAnnounceServer>.
-	DefaultDiscoveryServersV4 = []string{
-		"https://discovery-lookup.syncthing.net/v2/?noannounce",
-		"https://discovery-announce-v4.syncthing.net/v2/?nolookup",
-	}
-	// DefaultDiscoveryServersV6 should be substituted when the configuration
-	// contains <globalAnnounceServer>default-v6</globalAnnounceServer>.
-	DefaultDiscoveryServersV6 = []string{
-		"https://discovery-lookup.syncthing.net/v2/?noannounce",
-		"https://discovery-announce-v6.syncthing.net/v2/?nolookup",
-	}
-	// DefaultDiscoveryServers should be substituted when the configuration
-	// contains <globalAnnounceServer>default</globalAnnounceServer>.
-	DefaultDiscoveryServers = append(DefaultDiscoveryServersV4, DefaultDiscoveryServersV6...)
 	// DefaultTheme is the default and fallback theme for the web UI.
 	DefaultTheme = "default"
-	// Default stun servers should be substituted when the configuration
-	// contains <stunServer>default</stunServer>.
-	// The primary stun servers are provided by us and are resolved via an SRV record
-	// The fallback stun servers are used if the primary ones can't be resolved or are down.
-	DefaultFallbackStunServers = []string{
-		"stun.counterpath.com:3478",
-		"stun.hitv.com:3478",
-		"stun.internetcalls.com:3478",
-		"stun.miwifi.com:3478",
-		"stun.schlund.de:3478",
-		"stun.sipgate.net:3478",
-		"stun.voip.aebc.com:3478",
-		"stun.voipbuster.com:3478",
-		"stun.voipstunt.com:3478",
-	}
 )
 
 var (
@@ -151,17 +117,15 @@ func (cfg *Configuration) ProbeFreePorts() error {
 		cfg.GUI.RawAddress = net.JoinHostPort(guiHost, strconv.Itoa(port))
 	}
 
-	port, err := getFreePort("0.0.0.0", DefaultTCPPort)
+	port, err := getFreePort("0.0.0.0", DefaultWSSPort)
 	if err != nil {
-		return fmt.Errorf("get free port (BEP): %w", err)
+		return fmt.Errorf("get free port (BEP/WSS): %w", err)
 	}
-	if port == DefaultTCPPort {
+	if port == DefaultWSSPort {
 		cfg.Options.RawListenAddresses = []string{"default"}
 	} else {
 		cfg.Options.RawListenAddresses = []string{
-			netutil.AddressURL("tcp", net.JoinHostPort("0.0.0.0", strconv.Itoa(port))),
-			"dynamic+https://relays.syncthing.net/endpoint",
-			netutil.AddressURL("quic", net.JoinHostPort("0.0.0.0", strconv.Itoa(port))),
+			netutil.AddressURL("wss", net.JoinHostPort("0.0.0.0", strconv.Itoa(port))),
 		}
 	}
 

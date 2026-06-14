@@ -8,10 +8,8 @@ package config
 
 import (
 	"fmt"
-	"net"
 	"runtime"
 	"slices"
-	"strings"
 
 	"github.com/syncthing/syncthing/lib/protocol"
 	"github.com/syncthing/syncthing/lib/rand"
@@ -22,17 +20,17 @@ import (
 type OptionsConfiguration struct {
 	RawListenAddresses          []string `json:"listenAddresses" xml:"listenAddress" default:"default"`
 	RawGlobalAnnServers         []string `json:"globalAnnounceServers" xml:"globalAnnounceServer" default:"default"`
-	GlobalAnnEnabled            bool     `json:"globalAnnounceEnabled" xml:"globalAnnounceEnabled" default:"true"`
-	LocalAnnEnabled             bool     `json:"localAnnounceEnabled" xml:"localAnnounceEnabled" default:"true"`
+	GlobalAnnEnabled            bool     `json:"globalAnnounceEnabled" xml:"globalAnnounceEnabled" default:"false"`
+	LocalAnnEnabled             bool     `json:"localAnnounceEnabled" xml:"localAnnounceEnabled" default:"false"`
 	LocalAnnPort                int      `json:"localAnnouncePort" xml:"localAnnouncePort" default:"21027"`
 	LocalAnnMCAddr              string   `json:"localAnnounceMCAddr" xml:"localAnnounceMCAddr" default:"[ff12::8384]:21027"`
 	MaxSendKbps                 int      `json:"maxSendKbps" xml:"maxSendKbps"`
 	MaxRecvKbps                 int      `json:"maxRecvKbps" xml:"maxRecvKbps"`
 	ReconnectIntervalS          int      `json:"reconnectionIntervalS" xml:"reconnectionIntervalS" default:"20"`
-	RelaysEnabled               bool     `json:"relaysEnabled" xml:"relaysEnabled" default:"true"`
+	RelaysEnabled               bool     `json:"relaysEnabled" xml:"relaysEnabled" default:"false"`
 	RelayReconnectIntervalM     int      `json:"relayReconnectIntervalM" xml:"relayReconnectIntervalM" default:"10"`
 	StartBrowser                bool     `json:"startBrowser" xml:"startBrowser" default:"true"`
-	NATEnabled                  bool     `json:"natEnabled" xml:"natEnabled" default:"true"`
+	NATEnabled                  bool     `json:"natEnabled" xml:"natEnabled" default:"false"`
 	NATLeaseM                   int      `json:"natLeaseMinutes" xml:"natLeaseMinutes" default:"60"`
 	NATRenewalM                 int      `json:"natRenewalMinutes" xml:"natRenewalMinutes" default:"30"`
 	NATTimeoutS                 int      `json:"natTimeoutSeconds" xml:"natTimeoutSeconds" default:"10"`
@@ -64,7 +62,7 @@ type OptionsConfiguration struct {
 	StunKeepaliveMinS           int      `json:"stunKeepaliveMinS" xml:"stunKeepaliveMinS" default:"20"`
 	RawStunServers              []string `json:"stunServers" xml:"stunServer" default:"default"`
 	RawMaxCIRequestKiB          int      `json:"maxConcurrentIncomingRequestKiB" xml:"maxConcurrentIncomingRequestKiB"`
-	AnnounceLANAddresses        bool     `json:"announceLANAddresses" xml:"announceLANAddresses" default:"true"`
+	AnnounceLANAddresses        bool     `json:"announceLANAddresses" xml:"announceLANAddresses" default:"false"`
 	SendFullIndexOnUpgrade      bool     `json:"sendFullIndexOnUpgrade" xml:"sendFullIndexOnUpgrade"`
 	FeatureFlags                []string `json:"featureFlags" xml:"featureFlag"`
 	AuditEnabled                bool     `json:"auditEnabled" xml:"auditEnabled" default:"false" restart:"true"`
@@ -133,12 +131,7 @@ func (opts *OptionsConfiguration) prepare(guiPWIsSet bool) {
 		opts.ConnectionLimitMax = 0
 	}
 
-	if opts.ConnectionPriorityQUICWAN <= opts.ConnectionPriorityQUICLAN {
-		opts.ConnectionPriorityQUICWAN = opts.ConnectionPriorityQUICLAN + 1
-	}
-	if opts.ConnectionPriorityTCPWAN <= opts.ConnectionPriorityTCPLAN {
-		opts.ConnectionPriorityTCPWAN = opts.ConnectionPriorityTCPLAN + 1
-	}
+	// TCP/QUIC connection priorities are no longer used (WSS-only transport).
 
 	// If usage reporting is enabled we must have a unique ID.
 	if opts.URAccepted > 0 && opts.URUniqueID == "" {
@@ -161,7 +154,7 @@ func (opts OptionsConfiguration) RequiresRestartOnly() OptionsConfiguration {
 }
 
 func (opts OptionsConfiguration) IsStunDisabled() bool {
-	return opts.StunKeepaliveMinS < 1 || opts.StunKeepaliveStartS < 1 || !opts.NATEnabled
+	return true
 }
 
 func (opts OptionsConfiguration) ListenAddresses() []string {
@@ -178,51 +171,11 @@ func (opts OptionsConfiguration) ListenAddresses() []string {
 }
 
 func (opts OptionsConfiguration) StunServers() []string {
-	var addresses []string
-	for _, addr := range opts.RawStunServers {
-		switch addr {
-		case "default":
-			_, records, err := net.LookupSRV("stun", "udp", "syncthing.net")
-			if err != nil {
-				l.Debugln("Unable to resolve primary STUN servers via DNS:", err)
-			}
-
-			for _, record := range records {
-				priority := record.Priority
-				target := strings.TrimSuffix(record.Target, ".")
-				address := fmt.Sprintf("%s:%d", target, record.Port)
-				l.Debugf("Resolved primary STUN server %s with priority %d", address, priority)
-				addresses = append(addresses, address)
-			}
-
-			fallbackAddresses := slices.Clone(DefaultFallbackStunServers)
-			rand.Shuffle(fallbackAddresses)
-			addresses = append(addresses, fallbackAddresses...)
-		default:
-			addresses = append(addresses, addr)
-		}
-	}
-
-	addresses = stringutil.UniqueTrimmedStrings(addresses)
-
-	return addresses
+	return nil
 }
 
 func (opts OptionsConfiguration) GlobalDiscoveryServers() []string {
-	var servers []string
-	for _, srv := range opts.RawGlobalAnnServers {
-		switch srv {
-		case "default":
-			servers = append(servers, DefaultDiscoveryServers...)
-		case "default-v4":
-			servers = append(servers, DefaultDiscoveryServersV4...)
-		case "default-v6":
-			servers = append(servers, DefaultDiscoveryServersV6...)
-		default:
-			servers = append(servers, srv)
-		}
-	}
-	return stringutil.UniqueTrimmedStrings(servers)
+	return nil
 }
 
 func (opts OptionsConfiguration) MaxFolderConcurrency() int {

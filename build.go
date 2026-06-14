@@ -130,66 +130,6 @@ var targets = map[string]target{
 			{src: "assets/logo-only.svg", dst: "deb/usr/share/icons/hicolor/scalable/apps/syncthing.svg", perm: 0o644},
 		},
 	},
-	"stdiscosrv": {
-		name:        "stdiscosrv",
-		debname:     "syncthing-discosrv",
-		debdeps:     []string{"libc6"},
-		debpre:      "cmd/stdiscosrv/scripts/preinst",
-		description: "Syncthing Discovery Server",
-		buildPkgs:   []string{"github.com/syncthing/syncthing/cmd/stdiscosrv"},
-		binaryName:  "stdiscosrv", // .exe will be added automatically for Windows builds
-		archiveFiles: []archiveFile{
-			{src: "{{binary}}", dst: "{{binary}}", perm: 0o755},
-			{src: "cmd/stdiscosrv/README.md", dst: "README.txt", perm: 0o644},
-			{src: "LICENSE", dst: "LICENSE.txt", perm: 0o644},
-			{src: "AUTHORS", dst: "AUTHORS.txt", perm: 0o644},
-		},
-		systemdService: "stdiscosrv.service",
-		installationFiles: []archiveFile{
-			{src: "{{binary}}", dst: "deb/usr/bin/{{binary}}", perm: 0o755},
-			{src: "cmd/stdiscosrv/README.md", dst: "deb/usr/share/doc/syncthing-discosrv/README.txt", perm: 0o644},
-			{src: "LICENSE", dst: "deb/usr/share/doc/syncthing-discosrv/LICENSE.txt", perm: 0o644},
-			{src: "AUTHORS", dst: "deb/usr/share/doc/syncthing-discosrv/AUTHORS.txt", perm: 0o644},
-			{src: "man/stdiscosrv.1", dst: "deb/usr/share/man/man1/stdiscosrv.1", perm: 0o644},
-			{src: "cmd/stdiscosrv/etc/linux-systemd/stdiscosrv.service", dst: "deb/lib/systemd/system/stdiscosrv.service", perm: 0o644},
-			{src: "cmd/stdiscosrv/etc/linux-systemd/default", dst: "deb/etc/default/syncthing-discosrv", perm: 0o644},
-			{src: "cmd/stdiscosrv/etc/firewall-ufw/stdiscosrv", dst: "deb/etc/ufw/applications.d/stdiscosrv", perm: 0o644},
-		},
-	},
-	"strelaysrv": {
-		name:        "strelaysrv",
-		debname:     "syncthing-relaysrv",
-		debdeps:     []string{"libc6"},
-		debpre:      "cmd/strelaysrv/scripts/preinst",
-		description: "Syncthing Relay Server",
-		buildPkgs:   []string{"github.com/syncthing/syncthing/cmd/strelaysrv"},
-		binaryName:  "strelaysrv", // .exe will be added automatically for Windows builds
-		archiveFiles: []archiveFile{
-			{src: "{{binary}}", dst: "{{binary}}", perm: 0o755},
-			{src: "cmd/strelaysrv/README.md", dst: "README.txt", perm: 0o644},
-			{src: "cmd/strelaysrv/LICENSE", dst: "LICENSE.txt", perm: 0o644},
-			{src: "LICENSE", dst: "LICENSE.txt", perm: 0o644},
-			{src: "AUTHORS", dst: "AUTHORS.txt", perm: 0o644},
-		},
-		systemdService: "strelaysrv.service",
-		installationFiles: []archiveFile{
-			{src: "{{binary}}", dst: "deb/usr/bin/{{binary}}", perm: 0o755},
-			{src: "cmd/strelaysrv/README.md", dst: "deb/usr/share/doc/syncthing-relaysrv/README.txt", perm: 0o644},
-			{src: "cmd/strelaysrv/LICENSE", dst: "deb/usr/share/doc/syncthing-relaysrv/LICENSE.txt", perm: 0o644},
-			{src: "LICENSE", dst: "deb/usr/share/doc/syncthing-relaysrv/LICENSE.txt", perm: 0o644},
-			{src: "AUTHORS", dst: "deb/usr/share/doc/syncthing-relaysrv/AUTHORS.txt", perm: 0o644},
-			{src: "man/strelaysrv.1", dst: "deb/usr/share/man/man1/strelaysrv.1", perm: 0o644},
-			{src: "cmd/strelaysrv/etc/linux-systemd/strelaysrv.service", dst: "deb/lib/systemd/system/strelaysrv.service", perm: 0o644},
-			{src: "cmd/strelaysrv/etc/linux-systemd/default", dst: "deb/etc/default/syncthing-relaysrv", perm: 0o644},
-			{src: "cmd/strelaysrv/etc/firewall-ufw/strelaysrv", dst: "deb/etc/ufw/applications.d/strelaysrv", perm: 0o644},
-		},
-	},
-	"strelaypoolsrv": {
-		name:        "strelaypoolsrv",
-		description: "Syncthing Relay Pool Server",
-		buildPkgs:   []string{"github.com/syncthing/syncthing/cmd/infra/strelaypoolsrv"},
-		binaryName:  "strelaypoolsrv",
-	},
 	"stupgrades": {
 		name:        "stupgrades",
 		description: "Syncthing Upgrade Check Server",
@@ -808,12 +748,11 @@ func listFiles(dir string) []string {
 
 func rebuildAssets() {
 	os.Setenv("SOURCE_DATE_EPOCH", fmt.Sprint(buildStamp()))
-	runPrint(goCmd, "generate", "github.com/syncthing/syncthing/lib/api/auto", "github.com/syncthing/syncthing/cmd/infra/strelaypoolsrv/auto")
+	runPrint(goCmd, "generate", "github.com/syncthing/syncthing/lib/api/auto")
 }
 
 func lazyRebuildAssets() {
-	shouldRebuild := shouldRebuildAssets("lib/api/auto/gui.files.go", "gui") ||
-		shouldRebuildAssets("cmd/infra/strelaypoolsrv/auto/gui.files.go", "cmd/infra/strelaypoolsrv/gui")
+	shouldRebuild := shouldRebuildAssets("lib/api/auto/gui.files.go", "gui")
 
 	if shouldRebuild {
 		rebuildAssets()
@@ -877,7 +816,6 @@ func testmocks() {
 		"generate",
 		"github.com/syncthing/syncthing/lib/config",
 		"github.com/syncthing/syncthing/lib/connections",
-		"github.com/syncthing/syncthing/lib/discover",
 		"github.com/syncthing/syncthing/lib/events",
 		"github.com/syncthing/syncthing/lib/model",
 		"github.com/syncthing/syncthing/lib/protocol",

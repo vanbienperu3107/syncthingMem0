@@ -49,50 +49,6 @@ jobs:
             goarch: amd64
             runs-on: macos-latest
 
-          - role: server
-            target: stdiscosrv
-            goos: linux
-            goarch: amd64
-            runs-on: ubuntu-latest
-
-          - role: server
-            target: stdiscosrv
-            goos: windows
-            goarch: amd64
-            runs-on: windows-latest
-            app_name: "Syncthing Discovery Server"
-            service_name: "SyncthingDiscovery"
-            service_display_name: "Syncthing Discovery Server"
-            service_description: "Syncthing discovery server background service"
-            app_data_dir: '$PROGRAMDATA\Syncthing-Discovery'
-            app_args: '--db-dir $PROGRAMDATA\Syncthing-Discovery\db --cert $PROGRAMDATA\Syncthing-Discovery\cert.pem --key $PROGRAMDATA\Syncthing-Discovery\key.pem'
-            app_sync_subdir: ''
-            msi_data_root: 'Syncthing-Discovery'
-            msi_data_subdir: ''
-            msi_args: '-db-dir [CommonAppDataFolder]Syncthing-Discovery\\db --cert [CommonAppDataFolder]Syncthing-Discovery\\cert.pem --key [CommonAppDataFolder]Syncthing-Discovery\\key.pem'
-
-          - role: server
-            target: strelaysrv
-            goos: linux
-            goarch: amd64
-            runs-on: ubuntu-latest
-
-          - role: server
-            target: strelaysrv
-            goos: windows
-            goarch: amd64
-            runs-on: windows-latest
-            app_name: "Syncthing Relay Server"
-            service_name: "SyncthingRelay"
-            service_display_name: "Syncthing Relay Server"
-            service_description: "Syncthing relay server background service"
-            app_data_dir: '$PROGRAMDATA\Syncthing-Relay'
-            app_args: '-keys $PROGRAMDATA\Syncthing-Relay'
-            app_sync_subdir: ''
-            msi_data_root: 'Syncthing-Relay'
-            msi_data_subdir: ''
-            msi_args: '-keys [CommonAppDataFolder]Syncthing-Relay'
-
     runs-on: ${{ matrix.runs-on }}
     steps:
       - name: Checkout

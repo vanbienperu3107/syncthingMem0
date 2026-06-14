@@ -20,7 +20,6 @@ import (
 
 	"github.com/syncthing/syncthing/lib/config"
 	"github.com/syncthing/syncthing/lib/connections/registry"
-	"github.com/syncthing/syncthing/lib/nat"
 	"github.com/syncthing/syncthing/lib/osutil"
 	"github.com/syncthing/syncthing/lib/protocol"
 	"github.com/syncthing/syncthing/lib/stats"
@@ -50,30 +49,12 @@ type internalConn struct {
 type connType int
 
 const (
-	connTypeRelayClient connType = iota
-	connTypeRelayServer
-	connTypeTCPClient
-	connTypeTCPServer
-	connTypeQUICClient
-	connTypeQUICServer
-	connTypeWSSClient
+	connTypeWSSClient connType = iota
 	connTypeWSSServer
 )
 
 func (t connType) String() string {
 	switch t {
-	case connTypeRelayClient:
-		return "relay-client"
-	case connTypeRelayServer:
-		return "relay-server"
-	case connTypeTCPClient:
-		return "tcp-client"
-	case connTypeTCPServer:
-		return "tcp-server"
-	case connTypeQUICClient:
-		return "quic-client"
-	case connTypeQUICServer:
-		return "quic-server"
 	case connTypeWSSClient:
 		return "wss-client"
 	case connTypeWSSServer:
@@ -85,12 +66,6 @@ func (t connType) String() string {
 
 func (t connType) Transport() string {
 	switch t {
-	case connTypeRelayClient, connTypeRelayServer:
-		return "relay"
-	case connTypeTCPClient, connTypeTCPServer:
-		return "tcp"
-	case connTypeQUICClient, connTypeQUICServer:
-		return "quic"
 	case connTypeWSSClient, connTypeWSSServer:
 		return "wss"
 	default:
@@ -206,7 +181,7 @@ type genericDialer interface {
 }
 
 type listenerFactory interface {
-	New(*url.URL, config.Wrapper, *tls.Config, chan internalConn, *nat.Service, *registry.Registry, *lanChecker) genericListener
+	New(*url.URL, config.Wrapper, *tls.Config, chan internalConn, *registry.Registry, *lanChecker) genericListener
 	Valid(config.Configuration) error
 }
 

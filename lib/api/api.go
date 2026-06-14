@@ -47,7 +47,6 @@ import (
 	"github.com/syncthing/syncthing/lib/build"
 	"github.com/syncthing/syncthing/lib/config"
 	"github.com/syncthing/syncthing/lib/connections"
-	"github.com/syncthing/syncthing/lib/discover"
 	"github.com/syncthing/syncthing/lib/events"
 	"github.com/syncthing/syncthing/lib/fs"
 	"github.com/syncthing/syncthing/lib/locations"
@@ -80,7 +79,6 @@ type service struct {
 	eventSubs            map[events.EventType]events.BufferedSubscription
 	eventSubsMut         sync.Mutex
 	evLogger             events.Logger
-	discoverer           discover.Manager
 	connectionsService   connections.Service
 	fss                  model.FolderSummaryService
 	urService            *ur.Service
@@ -107,7 +105,7 @@ type Service interface {
 	WaitForStart() error
 }
 
-func New(id protocol.DeviceID, cfg config.Wrapper, assetDir, tlsDefaultCommonName string, m model.Model, defaultSub, diskSub events.BufferedSubscription, evLogger events.Logger, discoverer discover.Manager, connectionsService connections.Service, urService *ur.Service, fss model.FolderSummaryService, errors, systemLog slogutil.Recorder, noUpgrade bool, miscDB *db.Typed) Service {
+func New(id protocol.DeviceID, cfg config.Wrapper, assetDir, tlsDefaultCommonName string, m model.Model, defaultSub, diskSub events.BufferedSubscription, evLogger events.Logger, connectionsService connections.Service, urService *ur.Service, fss model.FolderSummaryService, errors, systemLog slogutil.Recorder, noUpgrade bool, miscDB *db.Typed) Service {
 	return &service{
 		id:      id,
 		cfg:     cfg,
@@ -118,7 +116,6 @@ func New(id protocol.DeviceID, cfg config.Wrapper, assetDir, tlsDefaultCommonNam
 			DiskEventMask:    diskSub,
 		},
 		evLogger:             evLogger,
-		discoverer:           discoverer,
 		connectionsService:   connectionsService,
 		fss:                  fss,
 		urService:            urService,
@@ -274,7 +271,6 @@ func (s *service) Serve(ctx context.Context) error {
 	restMux.HandlerFunc(http.MethodGet, "/rest/svc/random/string", s.getRandomString)         // [length]
 	restMux.HandlerFunc(http.MethodGet, "/rest/system/browse", s.getSystemBrowse)             // current
 	restMux.HandlerFunc(http.MethodGet, "/rest/system/connections", s.getSystemConnections)   // -
-	restMux.HandlerFunc(http.MethodGet, "/rest/system/discovery", s.getSystemDiscovery)       // -
 	restMux.HandlerFunc(http.MethodGet, "/rest/system/error", s.getSystemError)               // -
 	restMux.HandlerFunc(http.MethodGet, "/rest/system/paths", s.getSystemPaths)               // -
 	restMux.HandlerFunc(http.MethodGet, "/rest/system/ping", s.restPing)                      // -
@@ -1045,19 +1041,7 @@ func (s *service) getSystemStatus(w http.ResponseWriter, _ *http.Request) {
 	res["alloc"] = m.Alloc
 	res["sys"] = m.Sys - m.HeapReleased
 	res["tilde"] = tilde
-	if s.cfg.Options().LocalAnnEnabled || s.cfg.Options().GlobalAnnEnabled {
-		res["discoveryEnabled"] = true
-		discoStatus := s.discoverer.ChildErrors()
-		res["discoveryStatus"] = discoveryStatusMap(discoStatus)
-		res["discoveryMethods"] = len(discoStatus) // DEPRECATED: Redundant, only for backwards compatibility, should be removed.
-		discoErrors := make(map[string]*string, len(discoStatus))
-		for s, e := range discoStatus {
-			if e != nil {
-				discoErrors[s] = errorString(e)
-			}
-		}
-		res["discoveryErrors"] = discoErrors // DEPRECATED: Redundant, only for backwards compatibility, should be removed.
-	}
+	res["discoveryEnabled"] = false
 
 	res["connectionServiceStatus"] = s.connectionsService.ListenerStatus()
 	res["lastDialStatus"] = s.connectionsService.ConnectionStatus()
@@ -1260,20 +1244,7 @@ func (s *service) getSupportBundle(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, &zipFilesBuffer)
 }
 
-func (s *service) getSystemDiscovery(w http.ResponseWriter, _ *http.Request) {
-	devices := make(map[string]discover.CacheEntry)
 
-	if s.discoverer != nil {
-		// Device ids can't be marshalled as keys so we need to manually
-		// rebuild this map using strings. Discoverer may be nil if discovery
-		// has not started yet.
-		for device, entry := range s.discoverer.Cache() {
-			devices[device.String()] = entry
-		}
-	}
-
-	sendJSON(w, devices)
-}
 
 func (s *service) getReport(w http.ResponseWriter, r *http.Request) {
 	version := ur.Version
@@ -1919,19 +1890,7 @@ func errorString(err error) *string {
 	return nil
 }
 
-type discoveryStatusEntry struct {
-	Error *string `json:"error"`
-}
 
-func discoveryStatusMap(errs map[string]error) map[string]discoveryStatusEntry {
-	out := make(map[string]discoveryStatusEntry, len(errs))
-	for s, e := range errs {
-		out[s] = discoveryStatusEntry{
-			Error: errorString(e),
-		}
-	}
-	return out
-}
 
 // sanitizedHostname returns the given name in a suitable form for use as
 // the common name in a certificate, or an error.

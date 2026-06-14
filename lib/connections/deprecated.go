@@ -45,4 +45,22 @@ func init() {
 	dialers["kcp"] = invalidDialer{err: errDeprecated}
 	dialers["kcp4"] = invalidDialer{err: errDeprecated}
 	dialers["kcp6"] = invalidDialer{err: errDeprecated}
+
+	// TCP, QUIC, relay removed in syncthingMem0 (WSS-only hub model)
+	listeners["tcp"] = invalidListener{err: errDeprecated}
+	listeners["tcp4"] = invalidListener{err: errDeprecated}
+	listeners["tcp6"] = invalidListener{err: errDeprecated}
+	listeners["quic"] = invalidListener{err: errDeprecated}
+	listeners["quic4"] = invalidListener{err: errDeprecated}
+	listeners["quic6"] = invalidListener{err: errDeprecated}
+	listeners["relay"] = invalidListener{err: errDeprecated}
+	listeners["dynamic+http"] = invalidListener{err: errDeprecated}
+	listeners["dynamic+https"] = invalidListener{err: errDeprecated}
+	dialers["tcp"] = invalidDialer{err: errDeprecated}
+	dialers["tcp4"] = invalidDialer{err: errDeprecated}
+	dialers["tcp6"] = invalidDialer{err: errDeprecated}
+	dialers["quic"] = invalidDialer{err: errDeprecated}
+	dialers["quic4"] = invalidDialer{err: errDeprecated}
+	dialers["quic6"] = invalidDialer{err: errDeprecated}
+	dialers["relay"] = invalidDialer{err: errDeprecated}
 }

@@ -1,8 +1,8 @@
 name: Build client & server
 
+# Bỏ trigger "push" để không chạy trùng với auto-release.yml trên main.
+# Workflow này dùng để build client/server và đính kèm khi publish release thủ công.
 on:
-  pull_request:
-  push:
   release:
     types: [published]
   workflow_dispatch:
@@ -29,7 +29,6 @@ jobs:
           go run build.go assets
           tar -czf client-assets-${{ github.sha }}.tar.gz \
             lib/api/auto/gui.files.go \
-            cmd/infra/strelaypoolsrv/auto/gui.files.go
 
       - name: Upload client artifact
         uses: actions/upload-artifact@v4

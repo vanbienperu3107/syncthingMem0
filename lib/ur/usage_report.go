@@ -215,7 +215,7 @@ func (s *Service) reportData(ctx context.Context, urVersion int, preview bool) (
 
 	if urVersion >= 3 {
 		report.Uptime = s.UptimeS()
-		report.NATType = s.connectionsService.NATType()
+		report.NATType = "unknown"
 		report.AlwaysLocalNets = len(opts.AlwaysLocalNets) > 0
 		report.CacheIgnoredFiles = opts.CacheIgnoredFiles
 		report.OverwriteRemoteDeviceNames = opts.OverwriteRemoteDevNames

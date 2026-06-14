@@ -30,7 +30,6 @@ import (
 	"github.com/syncthing/syncthing/lib/config"
 	"github.com/syncthing/syncthing/lib/connections"
 	"github.com/syncthing/syncthing/lib/connections/registry"
-	"github.com/syncthing/syncthing/lib/discover"
 	"github.com/syncthing/syncthing/lib/events"
 	"github.com/syncthing/syncthing/lib/locations"
 	"github.com/syncthing/syncthing/lib/model"
@@ -267,20 +266,11 @@ func (a *App) startup() error {
 	tlsCfg.SessionTicketsDisabled = true
 	tlsCfg.InsecureSkipVerify = true
 
-	// Start discovery and connection management
-
-	// Chicken and egg, discovery manager depends on connection service to tell it what addresses it's listening on
-	// Connection service depends on discovery manager to get addresses to connect to.
-	// Create a wrapper that is then wired after they are both set up.
-	addrLister := &lateAddressLister{}
+	// Start connection management (discovery removed - WSS hub model)
 
 	connRegistry := registry.New()
-	discoveryManager := discover.NewManager(a.myID, a.cfg, a.cert, a.evLogger, addrLister, connRegistry)
-	connectionsService := connections.NewService(a.cfg, a.myID, m, tlsCfg, discoveryManager, bepProtocolName, tlsDefaultCommonName, a.evLogger, connRegistry, keyGen)
+	connectionsService := connections.NewService(a.cfg, a.myID, m, tlsCfg, bepProtocolName, tlsDefaultCommonName, a.evLogger, connRegistry, keyGen)
 
-	addrLister.AddressLister = connectionsService
-
-	a.mainService.Add(discoveryManager)
 	a.mainService.Add(connectionsService)
 
 	a.cfg.Modify(func(cfg *config.Configuration) {
@@ -299,7 +289,7 @@ func (a *App) startup() error {
 
 	// GUI
 
-	if err := a.setupGUI(m, defaultSub, diskSub, discoveryManager, connectionsService, usageReportingSvc, slogutil.ErrorRecorder, slogutil.GlobalRecorder, miscDB); err != nil {
+	if err := a.setupGUI(m, defaultSub, diskSub, connectionsService, usageReportingSvc, slogutil.ErrorRecorder, slogutil.GlobalRecorder, miscDB); err != nil {
 		slog.Error("Failed to start API", slogutil.Error(err))
 		return err
 	}
@@ -401,7 +391,7 @@ func (a *App) stopWithErr(stopReason svcutil.ExitStatus, err error) svcutil.Exit
 	return a.exitStatus
 }
 
-func (a *App) setupGUI(m model.Model, defaultSub, diskSub events.BufferedSubscription, discoverer discover.Manager, connectionsService connections.Service, urService *ur.Service, errors, systemLog slogutil.Recorder, miscDB *db.Typed) error {
+func (a *App) setupGUI(m model.Model, defaultSub, diskSub events.BufferedSubscription, connectionsService connections.Service, urService *ur.Service, errors, systemLog slogutil.Recorder, miscDB *db.Typed) error {
 	guiCfg := a.cfg.GUI()
 
 	if !guiCfg.Enabled {
@@ -415,7 +405,7 @@ func (a *App) setupGUI(m model.Model, defaultSub, diskSub events.BufferedSubscri
 	summaryService := model.NewFolderSummaryService(a.cfg, m, a.myID, a.evLogger)
 	a.mainService.Add(summaryService)
 
-	apiSvc := api.New(a.myID, a.cfg, locations.Get(locations.GUIAssets), tlsDefaultCommonName, m, defaultSub, diskSub, a.evLogger, discoverer, connectionsService, urService, summaryService, errors, systemLog, a.opts.NoUpgrade, miscDB)
+	apiSvc := api.New(a.myID, a.cfg, locations.Get(locations.GUIAssets), tlsDefaultCommonName, m, defaultSub, diskSub, a.evLogger, connectionsService, urService, summaryService, errors, systemLog, a.opts.NoUpgrade, miscDB)
 	a.mainService.Add(apiSvc)
 
 	if err := apiSvc.WaitForStart(); err != nil {
@@ -473,6 +463,3 @@ func printService(w io.Writer, svc interface{}, level int) {
 	}
 }
 
-type lateAddressLister struct {
-	discover.AddressLister
-}

@@ -26,7 +26,6 @@ import (
 	"github.com/syncthing/syncthing/lib/config"
 	"github.com/syncthing/syncthing/lib/connections/registry"
 	"github.com/syncthing/syncthing/lib/events"
-	"github.com/syncthing/syncthing/lib/nat"
 	"github.com/syncthing/syncthing/lib/protocol"
 	"github.com/syncthing/syncthing/lib/tlsutil"
 )
@@ -437,10 +436,9 @@ func withConnectionPair(b interface{ Fatal(...interface{}) }, connUri string, h 
 	if err != nil {
 		b.Fatal(err)
 	}
-	natSvc := nat.NewService(deviceId, wcfg)
 	conns := make(chan internalConn, 1)
 	lanChecker := &lanChecker{wcfg}
-	listenSvc := lf.New(uri, wcfg, tlsCfg, conns, natSvc, registry.New(), lanChecker)
+	listenSvc := lf.New(uri, wcfg, tlsCfg, conns, registry.New(), lanChecker)
 	supervisor.Add(listenSvc)
 
 	var addr *url.URL

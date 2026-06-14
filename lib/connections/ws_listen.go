@@ -21,7 +21,6 @@ import (
 	"github.com/syncthing/syncthing/internal/slogutil"
 	"github.com/syncthing/syncthing/lib/config"
 	"github.com/syncthing/syncthing/lib/connections/registry"
-	"github.com/syncthing/syncthing/lib/nat"
 	"github.com/syncthing/syncthing/lib/svcutil"
 )
 
@@ -167,7 +166,7 @@ func (*wsListener) NATType() string {
 
 type wsListenerFactory struct{}
 
-func (f *wsListenerFactory) New(uri *url.URL, cfg config.Wrapper, tlsCfg *tls.Config, conns chan internalConn, _ *nat.Service, registry *registry.Registry, lanChecker *lanChecker) genericListener {
+func (f *wsListenerFactory) New(uri *url.URL, cfg config.Wrapper, tlsCfg *tls.Config, conns chan internalConn, registry *registry.Registry, lanChecker *lanChecker) genericListener {
 	uriCopy := *fixupWSURI(uri)
 	l := &wsListener{
 		uri:        &uriCopy,
