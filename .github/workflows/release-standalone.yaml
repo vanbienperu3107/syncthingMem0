@@ -171,6 +171,11 @@ jobs:
           $tag = "${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}"
           $installerFile = "${{ matrix.role }}-${{ matrix.target }}-${{ matrix.goos }}-${{ matrix.goarch }}.exe"
           $msiFile = "${{ matrix.role }}-${{ matrix.target }}-${{ matrix.goos }}-${{ matrix.goarch }}.msi"
+          if ($tag -match '^v(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)') {
+            $wixVersion = "${($Matches.major)}.${($Matches.minor)}.${($Matches.patch)}.0"
+          } else {
+            $wixVersion = "0.0.0.0"
+          }
           $appArgs = '${{ matrix.app_args }}'
           $appDataDir = '${{ matrix.app_data_dir }}'
           $appSyncSubdir = '${{ matrix.app_sync_subdir }}'
@@ -234,7 +239,7 @@ jobs:
 
           & $makensis `
             "/DAPP_NAME=${{ matrix.app_name }}" `
-            "/DVERSION=$tag" `
+            "/DVERSION=$wixVersion" `
             "/DOUTPUT_FILE=$installerFile" `
             "/DSERVICE_NAME=${{ matrix.service_name }}" `
             "/DSERVICE_DISPLAY_NAME=${{ matrix.service_display_name }}" `
@@ -270,7 +275,7 @@ jobs:
 
           & $candle `
             "-dAppName=${{ matrix.app_name }}" `
-            "-dAppVersion=$tag" `
+            "-dAppVersion=$wixVersion" `
             "-dOutputFile=$installerFile" `
             "-dServiceName=${{ matrix.service_name }}" `
             "-dServiceDisplayName=${{ matrix.service_display_name }}" `
@@ -279,12 +284,12 @@ jobs:
             "-dDataRoot=${{ matrix.msi_data_root }}" `
             "-dDataSubDir=${{ matrix.msi_data_subdir }}" `
             "-dServiceArguments=$serviceArgs" `
-            "-out=release-artifacts/$wixObj" `
+            "-out" "release-artifacts/$wixObj" `
             "deploy/windows/syncthing-installer.wxs"
 
           & $light `
             -ext "WixUtilExtension" `
-            "-out=release-artifacts/$msiFile" `
+            "-out" "release-artifacts/$msiFile" `
             "release-artifacts/$wixObj"
 
       - name: Upload artifact
