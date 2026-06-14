@@ -245,8 +245,18 @@ jobs:
             "/DSYNC_SUBDIR=$appSyncSubdir" `
             "deploy/windows/syncthing-installer.nsi"
 
+          $installerCandidates = @(
+            Join-Path (Get-Location) "$installerFile"
+            Join-Path (Get-Location) "deploy/windows" "$installerFile"
+            Join-Path (Get-Location) "deploy/windows\$installerFile"
+          )
+          $installerFound = $installerCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $installerFound) {
+            throw "Could not locate installer output $installerFile."
+          }
+
           Move-Item `
-            -Path "$installerFile" `
+            -Path "$installerFound" `
             -Destination "release-artifacts/$installerFile"
 
           $candle = Resolve-Tool -ToolName "candle.exe" -HintPattern "candle.exe"
