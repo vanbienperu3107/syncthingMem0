@@ -35,7 +35,7 @@ jobs:
           - { goos: darwin, goarch: arm64 }
     steps:
       - name: Checkout source
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6.0.2
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -66,7 +66,7 @@ jobs:
           ls -la dist
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: syncthing-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
@@ -83,7 +83,7 @@ jobs:
       contents: write
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true # gộp mọi artifact vào một thư mục phẳng
@@ -99,7 +99,7 @@ jobs:
         run: echo "tag=v0.1.0-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: syncthingMem0 ${{ steps.ver.outputs.tag }}
