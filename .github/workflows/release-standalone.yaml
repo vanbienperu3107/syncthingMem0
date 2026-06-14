@@ -219,8 +219,8 @@ jobs:
           }
 
           $binaryCopyTargets = @(
-            Join-Path (Get-Location) $binaryName,
-            Join-Path (Join-Path (Get-Location) "deploy/windows") $binaryName
+            (Join-Path (Get-Location) $binaryName)
+            (Join-Path (Join-Path (Get-Location) "deploy/windows") $binaryName)
           )
           foreach ($binaryTarget in $binaryCopyTargets) {
             Copy-Item -Path $binaryFromZipPath -Destination $binaryTarget -Force
