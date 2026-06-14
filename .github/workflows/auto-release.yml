@@ -35,10 +35,10 @@ jobs:
           - { goos: darwin, goarch: arm64 }
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod # dùng đúng phiên bản Go khai báo trong go.mod
           cache: true # cache module để các lần build sau nhanh hơn
