@@ -145,10 +145,11 @@ jobs:
               $searchRoots = @()
               $searchRoots += $env:ChocolateyInstall
               $searchRoots += Join-Path $env:ChocolateyInstall "lib"
+              $searchRoots += Join-Path $env:ChocolateyInstall "bin"
               $searchRoots += $env:ProgramFiles
               $searchRoots += ${env:ProgramFiles(x86)}
-              $searchRoots += Join-Path $env:ProgramFiles "WiX Toolset v3.11\\bin"
-              $searchRoots += Join-Path $env:ProgramFiles "WiX Toolset v4\\bin"
+            $searchRoots += Join-Path $env:ProgramFiles "WiX Toolset v3.11\\bin"
+            $searchRoots += Join-Path $env:ProgramFiles "WiX Toolset v4\\bin"
               $searchRoots = $searchRoots | Where-Object { $_ }
               foreach ($root in $searchRoots) {
                 $found = Get-ChildItem -Path $root -Recurse -Filter $HintPattern -File -ErrorAction SilentlyContinue |
@@ -180,21 +181,50 @@ jobs:
           if (-not $zipArtifact) {
             throw "Could not find Windows build zip in release-artifacts."
           }
+          Write-Host "Using zip artifact: $($zipArtifact.FullName)"
+          Write-Host "Zip size (bytes): $((Get-Item $zipArtifact.FullName).Length)"
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
 
           $stagingDir = "release-artifacts\\installer-binary"
           if (Test-Path $stagingDir) {
             Remove-Item -Recurse -Force $stagingDir
           }
           New-Item -ItemType Directory -Path $stagingDir | Out-Null
-          Expand-Archive -Path $zipArtifact.FullName -DestinationPath $stagingDir -Force
 
-          $binaryFromZip = Get-ChildItem -Path $stagingDir -Filter $binaryName -Recurse -File -ErrorAction SilentlyContinue |
-            Select-Object -First 1
+          $fallbackFolder = Join-Path $stagingDir "extracted"
+          if (Test-Path $fallbackFolder) {
+            Remove-Item -Recurse -Force $fallbackFolder
+          }
+          New-Item -ItemType Directory -Path $fallbackFolder | Out-Null
+          Expand-Archive -Path $zipArtifact.FullName -DestinationPath $fallbackFolder -Force
+
+          $binaryFromZip = Get-ChildItem -Path $fallbackFolder -Recurse -Filter $binaryName -File -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $binaryFromZip) {
-            throw "Could not locate installer binary '$binaryName' inside $($zipArtifact.FullName)"
+            Write-Host "Exact match '$binaryName' not found after extraction. Searching for first *.exe."
+            $binaryFromZip = Get-ChildItem -Path $fallbackFolder -Recurse -Filter "*.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $binaryFromZip) {
+              Write-Host "Extracted files:"
+              Get-ChildItem -Path $fallbackFolder -Recurse -File | ForEach-Object { Write-Host " - $($_.FullName)" }
+              throw "Could not locate any installer binary inside $($zipArtifact.FullName)"
+            }
+            Write-Host "Using fallback binary '$($binaryFromZip.Name)' from expanded archive."
+          } else {
+            Write-Host "Using exact match '$($binaryFromZip.Name)' from expanded archive."
+          }
+          $binaryFromZipPath = $binaryFromZip.FullName
+
+          if (-not (Test-Path $binaryFromZipPath)) {
+            throw "Could not extract installer binary to $binaryFromZipPath."
           }
 
-          Copy-Item -Path $binaryFromZip.FullName -Destination $binaryName -Force
+          $binaryCopyTargets = @(
+            Join-Path (Get-Location) $binaryName,
+            Join-Path (Join-Path (Get-Location) "deploy/windows") $binaryName
+          )
+          foreach ($binaryTarget in $binaryCopyTargets) {
+            Copy-Item -Path $binaryFromZipPath -Destination $binaryTarget -Force
+          }
 
           $makensis = Resolve-Tool -ToolName "makensis.exe" -HintPattern "makensis.exe"
           if (-not $makensis) {
