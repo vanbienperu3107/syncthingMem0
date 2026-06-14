@@ -23,6 +23,7 @@
     <Package
       InstallerVersion="500"
       Compressed="yes"
+      Platform="x64"
       InstallScope="perMachine"
       InstallPrivileges="elevated"
     />
@@ -78,7 +79,7 @@
     </DirectoryRef>
 
     <DirectoryRef Id="CONFIGROOT">
-      <Component Id="ConfigRootComponent" Guid="*">
+      <Component Id="ConfigRootComponent" Guid="{F1B2C4D6-7A8B-4F1E-9A0D-111111111111}">
         <CreateFolder />
         <RemoveFolder Id="RemoveConfigRoot" On="uninstall" Directory="CONFIGROOT" />
       </Component>
@@ -86,7 +87,7 @@
 
     <?if "$(var.DataSubDir)" != "" ?>
     <DirectoryRef Id="CONFIGSUBDIR">
-      <Component Id="ConfigSubdirComponent" Guid="*">
+      <Component Id="ConfigSubdirComponent" Guid="{A2C3D4E5-8F90-4B2C-9A7D-222222222222}">
         <CreateFolder />
         <RemoveFolder Id="RemoveConfigSubdir" On="uninstall" Directory="CONFIGSUBDIR" />
       </Component>
