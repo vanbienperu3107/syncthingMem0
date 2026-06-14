@@ -171,8 +171,9 @@ jobs:
           $tag = "${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}"
           $installerFile = "${{ matrix.role }}-${{ matrix.target }}-${{ matrix.goos }}-${{ matrix.goarch }}.exe"
           $msiFile = "${{ matrix.role }}-${{ matrix.target }}-${{ matrix.goos }}-${{ matrix.goarch }}.msi"
-          if ($tag -match '^v(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)') {
-            $wixVersion = "${($Matches.major)}.${($Matches.minor)}.${($Matches.patch)}.0"
+          $tagMatch = [regex]::Match($tag, '^v(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)')
+          if ($tagMatch.Success) {
+            $wixVersion = "$($tagMatch.Groups['major'].Value).$($tagMatch.Groups['minor'].Value).$($tagMatch.Groups['patch'].Value).0"
           } else {
             $wixVersion = "0.0.0.0"
           }
