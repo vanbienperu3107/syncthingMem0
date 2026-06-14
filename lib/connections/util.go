@@ -132,4 +132,3 @@ func maybeReplacePort(uri *url.URL, laddr net.Addr) *url.URL {
 	uriCopy.Host = net.JoinHostPort(host, lportStr)
 	return &uriCopy
 }
-

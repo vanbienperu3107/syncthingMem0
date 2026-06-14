@@ -18,8 +18,8 @@ type folderDB struct {
 
 	folderID string
 
-	localDeviceIdx  int64
-	deleteRetention time.Duration
+	localDeviceIdx   int64
+	deleteRetention  time.Duration
 	useLWWReconciler bool
 }
 

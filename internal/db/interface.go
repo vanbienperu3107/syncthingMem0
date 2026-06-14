@@ -111,12 +111,12 @@ type DB interface {
 }
 
 type AncestorEntry struct {
-	Name           string
+	Name          string
 	ModifiedNanos int64
-	Size           int64
-	BlocklistHash  []byte
-	Deleted        bool
-	UpdatedNanos   int64
+	Size          int64
+	BlocklistHash []byte
+	Deleted       bool
+	UpdatedNanos  int64
 }
 
 // Generic KV store

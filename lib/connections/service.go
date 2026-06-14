@@ -40,7 +40,6 @@ import (
 	"github.com/syncthing/syncthing/lib/sliceutil"
 	"github.com/syncthing/syncthing/lib/stringutil"
 	"github.com/syncthing/syncthing/lib/svcutil"
-
 )
 
 var (

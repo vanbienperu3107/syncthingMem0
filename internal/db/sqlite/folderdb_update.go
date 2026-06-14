@@ -603,11 +603,11 @@ func (s *DB) folderIdxLocked(folderID string) (int64, error) {
 type fileRow struct {
 	Name          string
 	Version       dbVector
-	DeviceIdx    int64 `db:"device_idx"`
-	Sequence     int64
-	Modified     int64
-	Size         int64
-	BlocklistHash []byte `db:"blocklist_hash"`
+	DeviceIdx     int64 `db:"device_idx"`
+	Sequence      int64
+	Modified      int64
+	Size          int64
+	BlocklistHash []byte             `db:"blocklist_hash"`
 	LocalFlags    protocol.FlagLocal `db:"local_flags"`
 	Deleted       bool
 }

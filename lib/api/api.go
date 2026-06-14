@@ -1244,8 +1244,6 @@ func (s *service) getSupportBundle(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, &zipFilesBuffer)
 }
 
-
-
 func (s *service) getReport(w http.ResponseWriter, r *http.Request) {
 	version := ur.Version
 	if val, _ := strconv.Atoi(r.URL.Query().Get("version")); val > 0 {
@@ -1889,8 +1887,6 @@ func errorString(err error) *string {
 	}
 	return nil
 }
-
-
 
 // sanitizedHostname returns the given name in a suitable form for use as
 // the common name in a certificate, or an error.
