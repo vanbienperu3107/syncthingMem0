@@ -153,12 +153,13 @@ func TestGetDialer(t *testing.T) {
 		disabled   bool
 		deprecated bool
 	}{
-		{mustParseURI("tcp://1.2.3.4:5678"), true, false, false},   // ok
-		{mustParseURI("tcp4://1.2.3.4:5678"), true, false, false},  // ok
-		{mustParseURI("wss://1.2.3.4:443/ws"), true, false, false}, // ok
+		{mustParseURI("wss://1.2.3.4:443/ws"), true, false, false}, // ok (only live transport)
 		{mustParseURI("ws://1.2.3.4:80/ws"), false, false, false},  // no TLS peer certificate
+		{mustParseURI("tcp://1.2.3.4:5678"), false, false, true},   // deprecated (stripped)
+		{mustParseURI("tcp4://1.2.3.4:5678"), false, false, true},  // deprecated (stripped)
+		{mustParseURI("quic://1.2.3.4:5678"), false, false, true},  // deprecated (stripped)
 		{mustParseURI("kcp://1.2.3.4:5678"), false, false, true},   // deprecated
-		{mustParseURI("relay://1.2.3.4:5678"), false, true, false}, // disabled
+		{mustParseURI("relay://1.2.3.4:5678"), false, false, true}, // deprecated (stripped)
 		{mustParseURI("http://1.2.3.4:5678"), false, false, false}, // generally bad
 		{mustParseURI("bananas!"), false, false, false},            // wat
 	}
@@ -299,10 +300,9 @@ func TestNextDialRegistryCleanup(t *testing.T) {
 }
 
 func BenchmarkConnections(b *testing.B) {
+	// Only wss remains after the tcp/quic/relay strip.
 	addrs := []string{
-		"tcp://127.0.0.1:0",
-		"quic://127.0.0.1:0",
-		"relay://127.0.0.1:22067",
+		"wss://127.0.0.1:0",
 	}
 	sizes := []int{
 		1 << 10,
@@ -369,9 +369,9 @@ func BenchmarkConnections(b *testing.B) {
 }
 
 func TestConnectionEstablishment(t *testing.T) {
+	// tcp/quic transports were stripped in favour of a hub-centric WSS model;
+	// wss is the only live transport left.
 	addrs := []string{
-		"tcp://127.0.0.1:0",
-		"quic://127.0.0.1:0",
 		"wss://127.0.0.1:0",
 	}
 

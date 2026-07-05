@@ -8,6 +8,7 @@ package api
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -45,7 +46,13 @@ func (s *service) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cfg := s.cfg.RawCopy()
-	if cfg.RegistrationSecret != "" && r.Header.Get("X-Registration-Secret") != cfg.RegistrationSecret {
+	// Fail closed: registration is disabled until the hub operator configures a
+	// registration secret. An empty secret must never mean "open to anyone".
+	if cfg.RegistrationSecret == "" {
+		http.Error(w, "registration disabled: no registration secret configured", http.StatusForbidden)
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Registration-Secret")), []byte(cfg.RegistrationSecret)) != 1 {
 		http.Error(w, "invalid registration secret", http.StatusForbidden)
 		return
 	}

@@ -22,10 +22,38 @@ env:
 
 jobs:
   # ===========================================================================
+  # VERIFY — cổng kiểm thử: KHÔNG phát hành nếu format/vet/test đỏ
+  # ===========================================================================
+  verify:
+    name: Verify (fmt / vet / test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Kiểm tra gofmt
+        shell: bash
+        run: |
+          files=$(gofmt -l .)
+          if [ -n "$files" ]; then
+            echo "Các file chưa đạt gofmt:"; echo "$files"; exit 1
+          fi
+      # Sinh GUI assets sau bước gofmt (file sinh ra không cần đạt gofmt)
+      - name: Generate GUI assets
+        run: go generate ./lib/api/auto
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test ./...
+
+  # ===========================================================================
   # CLIENT — bản cài cho máy người dùng
   # ===========================================================================
   build-client:
     name: Build client ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: verify
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -100,6 +128,7 @@ jobs:
   # ===========================================================================
   build-server-image:
     name: Build & push SERVER image (GHCR)
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -165,5 +194,7 @@ jobs:
             ```
             Deploy nhanh bằng `deploy/server/docker-compose.yml` (đính kèm).
             Nhớ đặt `HubSecret` (>=32 ký tự) trong config trước khi dùng thật.
+            Đăng ký thiết bị fail-closed: phải đặt `RegistrationSecret`, nếu để trống
+            thì `/api/register` luôn trả 403 (không mở đăng ký cho bất kỳ ai).
             Build từ commit ${{ github.sha }}.
           files: deploy/server/docker-compose.yml

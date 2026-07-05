@@ -36,6 +36,23 @@ func TestRegisterRequiresRegistrationSecret(t *testing.T) {
 	}
 }
 
+func TestRegisterDisabledWhenNoRegistrationSecret(t *testing.T) {
+	// With no registration secret configured, registration must fail closed:
+	// an empty secret must never be treated as "open to anyone".
+	svc := newRegisterTestService(config.Configuration{
+		HubSecret: testHubSecret,
+		TokenTTL:  config.DefaultTokenTTLH,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/register", bytes.NewBufferString(`{"device_name":"Laptop"}`))
+	rr := httptest.NewRecorder()
+	svc.handleRegister(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("got status %d, want %d", rr.Code, http.StatusForbidden)
+	}
+}
+
 func TestRegisterReturnsTokenAndStoresDevice(t *testing.T) {
 	cfg := config.Configuration{
 		HubSecret:          testHubSecret,
@@ -146,11 +163,13 @@ func TestTokenRefreshRejectsInvalidBearer(t *testing.T) {
 
 func TestRegisterRejectsShortHubSecret(t *testing.T) {
 	svc := newRegisterTestService(config.Configuration{
-		HubSecret: "short",
-		TokenTTL:  config.DefaultTokenTTLH,
+		HubSecret:          "short",
+		RegistrationSecret: "registration-secret",
+		TokenTTL:           config.DefaultTokenTTLH,
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/register", bytes.NewBufferString(`{"device_name":"Laptop"}`))
+	req.Header.Set("X-Registration-Secret", "registration-secret")
 	rr := httptest.NewRecorder()
 	svc.handleRegister(rr, req)
 
