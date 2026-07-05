@@ -111,13 +111,14 @@ func TestTokenRefreshRequiresValidBearer(t *testing.T) {
 	cfg := config.Configuration{
 		HubSecret: testHubSecret,
 		TokenTTL:  config.DefaultTokenTTLH,
+		Devices:   []config.DeviceConfiguration{{DeviceID: dev1, Name: "Laptop"}},
 	}
 	svc := newRegisterTestService(cfg)
 	tokenService, err := tokenServiceFromConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	token, err := tokenService.Generate("device-1", "Laptop")
+	token, err := tokenService.Generate(dev1.String(), "Laptop")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,8 +140,36 @@ func TestTokenRefreshRequiresValidBearer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claims.DeviceID != "device-1" || claims.DeviceName != "Laptop" {
+	if claims.DeviceID != dev1.String() || claims.DeviceName != "Laptop" {
 		t.Fatalf("unexpected claims: %#v", claims)
+	}
+}
+
+func TestTokenRefreshRejectsRevokedDevice(t *testing.T) {
+	// A validly-signed, unexpired token whose device is no longer present in
+	// the config must be rejected: removing a device revokes its tokens.
+	cfg := config.Configuration{
+		HubSecret: testHubSecret,
+		TokenTTL:  config.DefaultTokenTTLH,
+		// dev1 intentionally NOT registered.
+	}
+	svc := newRegisterTestService(cfg)
+	tokenService, err := tokenServiceFromConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := tokenService.Generate(dev1.String(), "Laptop")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/token/refresh", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	svc.bearerAuthMiddleware(http.HandlerFunc(svc.handleTokenRefresh)).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("got status %d, want %d", rr.Code, http.StatusUnauthorized)
 	}
 }
 

@@ -130,12 +130,34 @@ func (s *service) handleTokenRefresh(w http.ResponseWriter, r *http.Request) {
 
 func (s *service) bearerAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tokenService, err := tokenServiceFromConfig(s.cfg.RawCopy())
+		cfg := s.cfg.RawCopy()
+		tokenService, err := tokenServiceFromConfig(cfg)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
-		deviceauth.Middleware(tokenService)(next).ServeHTTP(w, r)
+		// After the token signature/expiry is verified, require that the
+		// device is still registered. Removing a device from the hub config
+		// revokes all of its outstanding tokens immediately. (Rotating
+		// HubSecret revokes every device's tokens at once.)
+		guarded := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims, ok := deviceauth.ClaimsFromContext(r.Context())
+			if !ok {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			deviceID, err := protocol.DeviceIDFromString(claims.DeviceID)
+			if err != nil {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			if _, _, ok := cfg.Device(deviceID); !ok {
+				http.Error(w, "token revoked", http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+		deviceauth.Middleware(tokenService)(guarded).ServeHTTP(w, r)
 	})
 }
 
