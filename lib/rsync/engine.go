@@ -64,20 +64,14 @@ func (e *Engine) GenerateSignature(reader io.Reader, fileSize uint64) (*Signatur
 }
 
 // Deltify compares reader data with sig and emits a delta operation stream.
+// The target is streamed through a bounded sliding window, so peak memory use
+// is proportional to the block size and not to the target file size.
 func (e *Engine) Deltify(reader io.Reader, sig *Signature, opHandler func(Operation) error) error {
 	if err := validateSignature(sig); err != nil {
 		return err
 	}
 	if len(sig.Hashes) == 0 {
 		return e.emitAllAsData(reader, opHandler)
-	}
-
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return err
-	}
-	if len(data) == 0 {
-		return nil
 	}
 
 	weakMap := make(map[uint32][]int, len(sig.Hashes))
@@ -137,53 +131,86 @@ func (e *Engine) Deltify(reader io.Reader, sig *Signature, opHandler func(Operat
 		}
 		return nil
 	}
+	// addLiteral buffers unmatched bytes, flushing early when the buffer grows
+	// large so a long non-matching stretch does not accumulate in memory.
+	addLiteral := func(b []byte) error {
+		pending = append(pending, b...)
+		if len(pending) >= maxDataOperationSize {
+			return flushPending()
+		}
+		return nil
+	}
 
 	blockSize := int(sig.BlockSize)
-	pos := 0
-	for pos < len(data) {
-		if len(data)-pos < blockSize {
-			lastSize := int(sig.LastBlockSize)
-			if shortLastBlockMatchPossible(pos, len(data), sig) {
-				if idx, ok := e.matchBlock(data[pos:pos+lastSize], weakMap, sig); ok {
-					if err := emitBlock(idx); err != nil {
-						return err
-					}
-					pos += lastSize
-					continue
-				}
-			}
-			pending = append(pending, data[pos:]...)
+	lastSize := int(sig.LastBlockSize)
+	shortLast := lastSize > 0 && lastSize < blockSize
+	w := &deltaWindow{r: reader}
+
+	for {
+		avail, err := w.ensure(blockSize)
+		if err != nil {
+			return err
+		}
+		if avail == 0 {
 			break
 		}
 
-		rh := NewRollingHash(blockSize)
-		rh.Write(data[pos : pos+blockSize])
-		for {
-			if idx, ok := e.matchBlockWithWeak(data[pos:pos+blockSize], rh.Sum(), weakMap, sig); ok {
-				if err := emitBlock(idx); err != nil {
-					return err
-				}
-				pos += blockSize
-				break
-			}
-
-			if shortLastBlockMatchPossible(pos, len(data), sig) {
-				lastSize := int(sig.LastBlockSize)
-				if idx, ok := e.matchBlock(data[pos:pos+lastSize], weakMap, sig); ok {
+		if avail < blockSize {
+			// Fewer than a full block remains. Try to match the short last
+			// block of the base at the head of the tail, otherwise the rest is
+			// literal data.
+			tail := w.peek(avail)
+			if shortLast && avail >= lastSize {
+				if idx, ok := e.matchBlock(tail[:lastSize], weakMap, sig); ok {
 					if err := emitBlock(idx); err != nil {
 						return err
 					}
-					pos += lastSize
+					w.advance(lastSize)
+					continue
+				}
+			}
+			if err := addLiteral(tail); err != nil {
+				return err
+			}
+			w.advance(avail)
+			continue
+		}
+
+		rh := NewRollingHash(blockSize)
+		rh.Write(w.peek(blockSize))
+		for {
+			if idx, ok := e.matchBlockWithWeak(w.peek(blockSize), rh.Sum(), weakMap, sig); ok {
+				if err := emitBlock(idx); err != nil {
+					return err
+				}
+				w.advance(blockSize)
+				break
+			}
+
+			if shortLast {
+				// avail >= blockSize > lastSize, so lastSize bytes are present.
+				if idx, ok := e.matchBlock(w.peek(lastSize), weakMap, sig); ok {
+					if err := emitBlock(idx); err != nil {
+						return err
+					}
+					w.advance(lastSize)
 					break
 				}
 			}
 
-			pending = append(pending, data[pos])
-			pos++
-			if len(data)-pos < blockSize {
+			// No match at this position; the leading byte becomes literal.
+			if err := addLiteral(w.peek(1)); err != nil {
+				return err
+			}
+			w.advance(1)
+			avail, err = w.ensure(blockSize)
+			if err != nil {
+				return err
+			}
+			if avail < blockSize {
 				break
 			}
-			rh.Roll(data[pos+blockSize-1])
+			rh.Roll(w.peek(blockSize)[blockSize-1])
 		}
 	}
 
@@ -191,6 +218,58 @@ func (e *Engine) Deltify(reader io.Reader, sig *Signature, opHandler func(Operat
 		return err
 	}
 	return flushBlock()
+}
+
+// deltaWindow is a bounded, forward-only sliding window over a reader used by
+// the streaming Deltify scan. Memory use stays proportional to the block size
+// plus one read chunk regardless of the total input length.
+type deltaWindow struct {
+	r   io.Reader
+	buf []byte
+	pos int
+	eof bool
+}
+
+const deltaReadChunk = 64 * 1024
+
+// ensure tries to make at least n bytes available from the cursor and returns
+// the number of bytes currently available, which may be less than n at end of
+// input.
+func (w *deltaWindow) ensure(n int) (int, error) {
+	for len(w.buf)-w.pos < n && !w.eof {
+		if w.pos > 0 {
+			rem := copy(w.buf, w.buf[w.pos:])
+			w.buf = w.buf[:rem]
+			w.pos = 0
+		}
+		want := n
+		if want < deltaReadChunk {
+			want = deltaReadChunk
+		}
+		start := len(w.buf)
+		if cap(w.buf)-start < want {
+			nb := make([]byte, start, start+want)
+			copy(nb, w.buf)
+			w.buf = nb
+		}
+		w.buf = w.buf[:start+want]
+		m, err := io.ReadFull(w.r, w.buf[start:start+want])
+		w.buf = w.buf[:start+m]
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			w.eof = true
+		} else if err != nil {
+			return len(w.buf) - w.pos, err
+		}
+	}
+	return len(w.buf) - w.pos, nil
+}
+
+func (w *deltaWindow) peek(n int) []byte {
+	return w.buf[w.pos : w.pos+n]
+}
+
+func (w *deltaWindow) advance(n int) {
+	w.pos += n
 }
 
 func (e *Engine) matchBlock(data []byte, weakMap map[uint32][]int, sig *Signature) (int, bool) {
@@ -272,21 +351,21 @@ func (e *Engine) Patch(base io.ReadSeeker, ops []Operation, blockSize uint64, ou
 }
 
 func (e *Engine) emitAllAsData(reader io.Reader, opHandler func(Operation) error) error {
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return err
-	}
-	for len(data) > 0 {
-		n := len(data)
-		if n > maxDataOperationSize {
-			n = maxDataOperationSize
+	buf := make([]byte, maxDataOperationSize)
+	for {
+		n, err := io.ReadFull(reader, buf)
+		if n > 0 {
+			if err := opHandler(Operation{Type: OpData, Data: cloneBytes(buf[:n])}); err != nil {
+				return err
+			}
 		}
-		if err := opHandler(Operation{Type: OpData, Data: cloneBytes(data[:n])}); err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil
+		}
+		if err != nil {
 			return err
 		}
-		data = data[n:]
 	}
-	return nil
 }
 
 func validateSignature(sig *Signature) error {
@@ -310,12 +389,6 @@ func blockLength(sig *Signature, index int) uint64 {
 		return sig.LastBlockSize
 	}
 	return sig.BlockSize
-}
-
-func shortLastBlockMatchPossible(pos, dataLength int, sig *Signature) bool {
-	return sig.LastBlockSize > 0 &&
-		sig.LastBlockSize < sig.BlockSize &&
-		uint64(dataLength-pos) >= sig.LastBlockSize
 }
 
 func seekSize(r io.ReadSeeker) (int64, error) {

@@ -19,6 +19,8 @@ permissions:
 env:
   CGO_ENABLED: "0"
   IMAGE: ghcr.io/vanbienperu3107/syncthingmem0-server
+  # Số phiên bản gốc — đổi ở DUY NHẤT chỗ này. github.run_number là số build.
+  VERSION: "0.1.0"
 
 jobs:
   # ===========================================================================
@@ -110,7 +112,7 @@ jobs:
           merge-multiple: true
       - run: ls -laR artifacts
       - id: ver
-        run: echo "tag=client-v0.1.0-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+        run: echo "tag=client-v${{ env.VERSION }}-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
@@ -159,7 +161,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: ver
-        run: echo "tag=v0.1.0-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+        run: echo "tag=v${{ env.VERSION }}-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
       - name: Build & push (amd64 + arm64)
         uses: docker/build-push-action@v6
         with:
@@ -180,7 +182,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - id: ver
-        run: echo "tag=server-v0.1.0-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+        run: echo "tag=server-v${{ env.VERSION }}-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
@@ -189,7 +191,7 @@ jobs:
             **Bản SERVER (hub)** — Docker image đa kiến trúc cho VPS.
 
             ```
-            docker pull ${{ env.IMAGE }}:v0.1.0-build.${{ github.run_number }}
+            docker pull ${{ env.IMAGE }}:v${{ env.VERSION }}-build.${{ github.run_number }}
             # hoặc: docker pull ${{ env.IMAGE }}:latest
             ```
             Deploy nhanh bằng `deploy/server/docker-compose.yml` (đính kèm).

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math/rand"
 	"testing"
+	"testing/iotest"
 )
 
 func TestRollingHashWriteVsRoll(t *testing.T) {
@@ -310,6 +311,101 @@ func BenchmarkDeltifySmallChange(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+func TestDeltifyStreamingLargeInput(t *testing.T) {
+	// Target larger than the internal read chunk and literal flush threshold,
+	// with a small localized edit. Exercises sliding-window refill/compaction
+	// and confirms the streaming scan reconstructs the target exactly.
+	original := deterministicBytes(5 * 1024 * 1024)
+	modified := cloneBytes(original)
+	copy(modified[3*1024*1024:3*1024*1024+512], bytes.Repeat([]byte{0x5a}, 512))
+
+	ops, result, sig := deltifyPatch(t, original, modified)
+
+	if !bytes.Equal(result, modified) {
+		t.Fatal("patched output does not match modified")
+	}
+	if totalDataBytes(ops) > 4*int(sig.BlockSize) {
+		t.Fatalf("OpData = %d bytes, want close to a couple of blocks", totalDataBytes(ops))
+	}
+	for _, op := range ops {
+		if op.Type == OpData && len(op.Data) > maxDataOperationSize {
+			t.Fatalf("OpData of %d bytes exceeds cap %d", len(op.Data), maxDataOperationSize)
+		}
+	}
+}
+
+func TestDeltifyStreamingArbitraryReaderChunks(t *testing.T) {
+	// A reader that yields a single byte per Read proves Deltify does not rely
+	// on reading the whole target at once or on a seekable source.
+	original := deterministicBytes(300 * 1024)
+	modified := cloneBytes(original)
+	copy(modified[128*1024:129*1024], bytes.Repeat([]byte{0x11}, 1024))
+
+	engine := NewEngine(maxBlockSize)
+	sig, err := engine.GenerateSignature(bytes.NewReader(original), uint64(len(original)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ops []Operation
+	if err := engine.Deltify(iotest.OneByteReader(bytes.NewReader(modified)), sig, func(op Operation) error {
+		ops = append(ops, op)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var result bytes.Buffer
+	if err := engine.Patch(bytes.NewReader(original), ops, sig.BlockSize, &result); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(result.Bytes(), modified) {
+		t.Fatal("patched output does not match modified (one-byte reader)")
+	}
+}
+
+func TestDeltifyEmptyBaseLargeTargetBounded(t *testing.T) {
+	// With an empty base the whole target is literal; every emitted OpData must
+	// respect the size cap and the output must round-trip exactly.
+	engine := NewEngine(maxBlockSize)
+	sig, err := engine.GenerateSignature(bytes.NewReader(nil), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := deterministicBytes(3*1024*1024 + 123)
+
+	var ops []Operation
+	if err := engine.Deltify(bytes.NewReader(target), sig, func(op Operation) error {
+		ops = append(ops, op)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	dataOps := 0
+	for _, op := range ops {
+		if op.Type != OpData {
+			t.Fatalf("empty base produced a non-data op: %v", op.Type)
+		}
+		if len(op.Data) > maxDataOperationSize {
+			t.Fatalf("OpData of %d bytes exceeds cap %d", len(op.Data), maxDataOperationSize)
+		}
+		dataOps++
+	}
+	if dataOps < 2 {
+		t.Fatalf("expected the >1MiB target to be split into multiple OpData, got %d", dataOps)
+	}
+	if got := totalDataBytes(ops); got != len(target) {
+		t.Fatalf("literal bytes = %d, want %d", got, len(target))
+	}
+
+	var result bytes.Buffer
+	if err := engine.Patch(bytes.NewReader(nil), ops, sig.BlockSize, &result); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(result.Bytes(), target) {
+		t.Fatal("patched output does not match target (empty base)")
 	}
 }
 

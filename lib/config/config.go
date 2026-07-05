@@ -35,7 +35,10 @@ const (
 	OldestHandledVersion = 10
 	CurrentVersion       = 52
 	MaxRescanIntervalS   = 365 * 24 * 60 * 60
-	DefaultTokenTTLH     = 720
+	// DefaultTokenTTLH is the default device bearer-token lifetime in hours
+	// (7 days). Tokens are renewed via /api/token/refresh; a shorter default
+	// limits the exposure window if a token leaks.
+	DefaultTokenTTLH = 168
 )
 
 var (
@@ -68,7 +71,7 @@ type Configuration struct {
 	HubSecret                string                `json:"hubSecret" xml:"hubSecret"`
 	RegistrationSecret       string                `json:"registrationSecret" xml:"registrationSecret"`
 	DeviceToken              string                `json:"deviceToken" xml:"deviceToken"`
-	TokenTTL                 int                   `json:"tokenTTL" xml:"tokenTTL" default:"720"`
+	TokenTTL                 int                   `json:"tokenTTL" xml:"tokenTTL" default:"168"`
 	IgnoredDevices           []ObservedDevice      `json:"remoteIgnoredDevices" xml:"remoteIgnoredDevice"`
 	DeprecatedPendingDevices []ObservedDevice      `json:"-" xml:"pendingDevice,omitempty"` // Deprecated: Do not use.
 	Defaults                 Defaults              `json:"defaults" xml:"defaults"`
